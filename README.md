@@ -19,9 +19,12 @@ device, but it has not yet run on a WVR.** See [First run](#first-run-on-hardwar
 - **No waiting for storage:** the first 93 ms of every sound is kept in RAM, so a trigger starts
   at once and the eMMC catches up behind it. Sounds are ordinary WAV files on a FAT volume.
 - **Triggers:** OSC over WiFi (QLab), MIDI (the DIN input and the USB host backpack), pins to ground.
-- **Manager** at `http://192.168.4.1` (or `http://<name>.local`): drop sounds on slots, drag to
-  swap, ⌥-drag to copy, cut/copy/paste, undo. Sliders are heard while they move. Every change is
-  saved on the device as it is made; there is no sync step.
+- **Manager** at `http://192.168.4.1` (or `http://<name>.local`), in two panes like the
+  Performer Library Manager: your sound library on the computer on the left (a folder, its
+  folders the categories), the WVR's slots and the selected slot's settings on the right. Drag or
+  copy and paste between them; sounds are converted on the way to the WVR. Sliders are heard
+  while they move, and every change to the WVR is saved on it as it is made. The library folder
+  is written when you press Save.
 - Pitch is real time (4-point interpolation), so it can be changed after upload.
 
 Not yet: filter, delay and reverb; the 2 × 6 voice instrument mode; backup and restore of a
@@ -31,14 +34,17 @@ whole device; loop points inside a sound.
 
 1. Power the WVR and join its WiFi network, `WVR-xxxx`, password `12345678`.
 2. Open `http://192.168.4.1`.
-3. Drop sound files on the slots (WAV, AIFF, and whatever else the browser can read). They are
-   converted to 16-bit, 44.1 kHz in the browser and sent to the device.
-4. Select a slot to set it up. ▶ plays it on the device.
+3. **Open folder…** in the Library pane and pick the folder with your sounds (or drop sounds on
+   it). Drag sounds onto the WVR's slots. They are converted to 16-bit, 44.1 kHz in the browser.
+4. Select a slot to set it up beside the list. ▶ plays it on the device.
+
+Saving the library straight into its folder needs Chrome or Edge on a page from the internet
+(the GitHub Pages copy). On the WVR's own page, and in other browsers, **Save** downloads the
+library as a zip instead. **Keys and tips** at the bottom of the page lists the shortcuts.
 
 **Device…** sets the name, the WiFi password, an existing network to join as well, the OSC
 port and the MIDI channel, and installs new firmware.
 
-Keys: Space plays the selected slot, Esc stops everything, arrows move, ⌘C/X/V, Delete, ⌘Z/⇧⌘Z.
 
 ### QLab and other OSC senders
 
@@ -132,9 +138,12 @@ firmware/WvrRadio32/
   control.*      OSC, MIDI, pins
   web_bundle.h   the manager, packed by tools/embed.py
 docs/            the manager: plain HTML, CSS and JavaScript, no build step
-                 (docs/js/demo.js is the pretend device of the online demo)
+  js/model.js    the project and the library, as pure functions (tested)
+  js/app.js      the page
+  js/demo.js     the pretend WVR of the online demo (not in the firmware)
 tools/mock.py    a pretend WVR for working on the manager: http://localhost:8032
-test/run.sh      the manager's tests (macOS's built-in JavaScript engine)
+test/run.sh      the model's tests (macOS's built-in JavaScript engine)
+test/browser.sh  drives the page in headless Chrome against the pretend WVR
 ```
 
 On the eMMC: `project.json`, `device.json` and the sounds in `snd/`.

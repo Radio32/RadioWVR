@@ -63,5 +63,56 @@ eq(prep.channels[0].length, 4410, "resampled length");
 eq([WVR.noteName(60), WVR.noteName(36)], ["C3", "C1"], "note names");
 eq([WVR.fmtDur(1.234), WVR.fmtDur(75)], ["1.23 s", "1:15"], "durations");
 
+// moving slots up and down
+var m = WVR.normalise({ slots: [{ file: "a.wav", name: "A" }, { file: "b.wav", name: "B" }, { file: "c.wav", name: "C" }] }, 4);
+eq(WVR.moveSlots(m, [1, 2], 1), [2, 3], "two slots down");
+eq(m.slots.map(function (s) { return s.name; }), ["A", "", "B", "C"], "B and C moved down, the gap moved up");
+eq(WVR.moveSlots(m, [3], 1), null, "the last slot can't go down");
+eq(WVR.moveSlots(m, [0, 2], -1), null, "the first slot can't go up");
+eq(WVR.moveSlots(m, [2, 3], -1), [1, 2], "and back up");
+eq(m.slots.map(function (s) { return s.name; }), ["A", "B", "C", ""], "back where they were");
+
+// the library
+eq([Lib.isAudio("Slam.WAV"), Lib.isAudio("._Slam.wav"), Lib.isAudio("notes.txt"), Lib.isAudio("x.aiff")], [true, false, false, true], "which files are sounds");
+eq(Lib.split("door.slam.wav"), { base: "door.slam", ext: ".wav" }, "name and extension");
+eq([Lib.cleanBase(' Dør: "slam" / 2 '), Lib.cleanBase(""), Lib.cleanBase("...hidden")], ["Dør slam 2", "Sound", "hidden"], "clean file names");
+eq([Lib.cleanCat("Doors / Wood/"), Lib.cleanCat("/"), Lib.cleanCat("a:b")], ["Doors/Wood", "", "a b"], "clean categories");
+var it1 = Lib.item("Doors", "Slam.wav", { src: "Doors/Slam.wav" }), it2 = Lib.item("Doors", "slam 2.wav"), it3 = Lib.item("", "Wind.wav", { src: "Wind.wav" });
+var items = [it1, it2, it3];
+eq(Lib.uniqueBase(items, Lib.item("Doors", "x.wav"), "SLAM"), "SLAM 3", "a name taken in another case is taken (and slam 2 is too)");
+eq(Lib.uniqueBase(items, Lib.item("Doors", "x.wav"), "Slam 2"), "Slam 3", "numbers count on");
+eq(Lib.uniqueBase(items, it1, "Slam"), "Slam", "a sound keeps its own name");
+eq(Lib.uniqueBase(items, Lib.item("Other", "x.wav"), "Slam"), "Slam", "other categories don't count");
+eq(Lib.sorted([Lib.item("B", "x.wav"), Lib.item("", "z.wav"), Lib.item("A", "Take 10.wav"), Lib.item("A", "Take 9.wav")]).map(Lib.path),
+   ["z.wav", "A/Take 9.wav", "A/Take 10.wav", "B/x.wav"], "sorted like a file browser");
+eq(Lib.categories(items), ["", "Doors"], "categories");
+ok(Lib.matches(it1, "door sl") && !Lib.matches(it1, "wind"), "find");
+
+// saving: nothing to do, then a rename, a move, a deletion, a new sound
+eq(Lib.savePlan([it1, it3], []), { writes: [], deletes: [], preload: [] }, "nothing changed");
+it2.src = null;
+var plan = Lib.savePlan([it1, it2], [it3]);
+eq(plan.writes.map(function (w) { return w.to; }), ["Doors/slam 2.wav"], "a new sound is written");
+eq(plan.deletes, ["Wind.wav"], "a deleted one is removed");
+it1.cat = "Old doors";
+plan = Lib.savePlan([it1], []);
+eq([plan.writes[0].to, plan.deletes], ["Old doors/Slam.wav", ["Doors/Slam.wav"]], "a move writes the new path and deletes the old");
+// two sounds swap names: both are read before either is written, and nothing is deleted
+var a = Lib.item("", "B.wav", { src: "A.wav" }), b = Lib.item("", "A.wav", { src: "B.wav" });
+plan = Lib.savePlan([a, b], []);
+eq([plan.writes.length, plan.deletes, plan.preload.length], [2, [], 2], "a swap reads both first and deletes nothing");
+// a case-only rename is written (the folder may not care about case, the name should still change)
+var c = Lib.item("", "door.wav", { src: "Door.wav" });
+plan = Lib.savePlan([c], []);
+eq([plan.writes.length, plan.deletes], [1, []], "a case-only rename writes and deletes nothing");
+
+// zip: the CRC of a known string, and the structure
+var bytes = []; "The quick brown fox jumps over the lazy dog".split("").forEach(function (ch) { bytes.push(ch.charCodeAt(0)); });
+eq(Zip.crc32(new Uint8Array(bytes)).toString(16), "414fa339", "CRC-32");
+var zparts = Zip.build([{ name: "Dører/Slam.wav", data: new Uint8Array([1, 2, 3]) }], new Date(2026, 10, 14, 12, 0, 0)), zlen = 0;
+zparts.forEach(function (p) { zlen += p.length; });
+eq(zlen, 30 + 15 + 3 + 46 + 15 + 22, "zip size with a UTF-8 name");
+eq([zparts[0][0], zparts[0][1], zparts[0][2], zparts[0][3]], [0x50, 0x4b, 3, 4], "zip starts with PK");
+
 print(failed ? failed + " of " + count + " FAILED" : "all " + count + " passed");
 if (failed) throw new Error("tests failed");

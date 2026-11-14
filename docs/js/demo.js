@@ -41,26 +41,45 @@ var WVRDemo = (function () {
   function dbDelete(name) { try { if (db) db.transaction("files", "readwrite").objectStore("files").delete(name); } catch (e) {} }
   function keepProject() { try { localStorage.setItem("wvr-demo-project", JSON.stringify(project)); } catch (e) {} }
 
-  // Three sounds to start with, so there is something to play.
+  // Sounds made here, so the demo has something to play.
+  var R = 44100, seedN = 1;
+  function noise() { seedN = (seedN * 1664525 + 1013904223) >>> 0; return seedN / 2147483648 - 1; }
+  function synth(secs, fn) {
+    var n = Math.round(secs * R), x = new Float32Array(n);
+    for (var i = 0; i < n; i++) x[i] = fn(i / R, i / n);
+    return { rate: R, channels: [x], sourceBits: 16 };
+  }
+  function bell(f) { return function (t) { return 0.5 * Math.exp(-t * 2.2) * (Math.sin(6.2832 * f * t) + 0.5 * Math.sin(6.2832 * f * 2.5 * t) + 0.25 * Math.sin(6.2832 * f * 4.2 * t)) / 1.75; }; }
+  function knock(t) { return 0.8 * Math.exp(-t * 28) * Math.sin(6.2832 * (140 - 200 * t) * t); }
+  function wind() { var y = 0; return function (t, p) { y = y * 0.985 + noise() * 0.015; return y * 6 * (0.35 + 0.65 * (0.5 - 0.5 * Math.cos(6.2832 * p))); }; }
+  function rain() { var y = 0, drop = 0; return function () { y = y * 0.6 + noise() * 0.4; if (noise() > 0.9993) drop = 1; drop *= 0.996; return 0.25 * y + 0.5 * drop * noise(); }; }
+  var SOUNDS = {
+    "Bell": function () { return synth(2.5, bell(660)); },
+    "Bell low": function () { return synth(3.5, bell(330)); },
+    "Knock": function () { return synth(0.25, knock); },
+    "Knock twice": function () { return synth(0.6, function (t) { return knock(t) + (t > 0.28 ? knock(t - 0.28) : 0); }); },
+    "Wind": function () { return synth(6, wind()); },
+    "Rain": function () { return synth(5, rain()); }
+  };
+
   function seed() {
-    var R = 44100;
-    function make(name, secs, fn, extra) {
-      var n = Math.round(secs * R), x = new Float32Array(n);
-      for (var i = 0; i < n; i++) x[i] = fn(i / R, i / n);
-      var snd = { rate: R, channels: [x], sourceBits: 16 }, file = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-demo0.wav";
+    function make(name, extra) {
+      var snd = SOUNDS[name](), file = name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-demo0.wav";
       files[file] = PDAudio.encodeWav16(snd, 1); dbPut(file, files[file]);
-      var s = { name: name, file: file, src: name + ".wav", dur: secs, ch: 1, peaks: WVR.peaksOf(snd) };
+      var s = { name: name, file: file, src: name + ".wav", dur: snd.channels[0].length / R, ch: 1, peaks: WVR.peaksOf(snd) };
       for (var k in extra) s[k] = extra[k];
       return s;
     }
-    var seedN = 1;
-    function noise() { seedN = (seedN * 1664525 + 1013904223) >>> 0; return seedN / 2147483648 - 1; }
-    project.slots = [
-      make("Bell", 2.5, function (t) { return 0.5 * Math.exp(-t * 2.2) * (Math.sin(6.2832 * 660 * t) + 0.5 * Math.sin(6.2832 * 1651 * t) + 0.25 * Math.sin(6.2832 * 2790 * t)) / 1.75; }, {}),
-      make("Wind", 6, function (t, p) { var a = 0.5 - 0.5 * Math.cos(6.2832 * p); this.y = (this.y || 0) * 0.985 + noise() * 0.015; return this.y * 6 * (0.35 + 0.65 * a); }.bind({}), { loop: true, fadeIn: 800, fadeOut: 1500, retrig: "toggle" }),
-      make("Knock", 0.25, function (t) { return 0.8 * Math.exp(-t * 28) * Math.sin(6.2832 * (140 - 200 * t) * t); }, {})
-    ];
+    project.slots = [make("Bell", {}), make("Wind", { loop: true, fadeIn: 800, fadeOut: 1500, retrig: "toggle" }), make("Knock", {})];
     keepProject();
+  }
+
+  // A small library to try the left-hand pane with: [{ cat, name, blob }]
+  function examples() {
+    var list = [["Bells", "Bell"], ["Bells", "Bell low"], ["Doors", "Knock"], ["Doors", "Knock twice"], ["Weather", "Wind"], ["Weather", "Rain"]];
+    return Promise.resolve(list.map(function (e) {
+      return { cat: e[0], name: e[1], blob: new Blob([PDAudio.encodeWav16(SOUNDS[e[1]](), 2)], { type: "audio/wav" }) };
+    }));
   }
 
   function init() {
@@ -177,5 +196,5 @@ var WVRDemo = (function () {
 
   function request(method, path, body) { return init().then(function () { return handle(method, path, body); }); }
 
-  return { request: request };
+  return { request: request, examples: examples };
 })();

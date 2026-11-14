@@ -21,7 +21,8 @@ class H(http.server.BaseHTTPRequestHandler):
         now = time.time()
         state["playing"] = {s: t for s, t in state["playing"].items() if t > now}
         if not p.startswith("/api/"):
-            f = WEB / ("index.html" if p == "/" else p.lstrip("/"))
+            # /test/... serves the browser tests in test/, everything else the manager in docs/
+            f = (WEB.parent / p.lstrip("/")) if p.startswith("/test/") else WEB / ("index.html" if p == "/" else p.lstrip("/"))
             if not f.is_file(): return self.send(404, "not found", "text/plain")
             ctype = {".html": "text/html", ".css": "text/css", ".js": "text/javascript"}.get(f.suffix, "application/octet-stream")
             return self.send(200, f.read_bytes(), ctype)

@@ -2,47 +2,114 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>WVR Manager</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WVR Library Manager</title>
+<meta name="description" content="Put sounds from your library on the WVR: two panes, your sound folders on the left and the WVR's slots on the right, with preview, copy, paste, rename and the settings of every slot.">
 <link rel="preconnect" href="https://fonts.googleapis.com" data-web-only>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-web-only>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" data-web-only>
-<link rel="stylesheet" href="style.css?v=20261115">
+<link rel="stylesheet" href="style.css?v=20261115b">
 </head>
 <body>
 <div class="wrap">
   <header class="top">
-    <div class="brand">
-      <span class="eyebrow">WVR Radio32 · <span id="devName">…</span></span>
-      <input id="projName" class="title" type="text" maxlength="40" aria-label="Project name" placeholder="Project name">
-    </div>
-    <div class="transport">
-      <div class="meters" title="Output level"><div class="meter"><i id="mL"></i></div><div class="meter"><i id="mR"></i></div></div>
-      <label class="master">Master <input id="master" type="range" min="-60" max="6" step="0.5"> <output id="masterOut"></output></label>
-      <button class="btn danger" id="stopAll" title="Stop every sound (Esc)">Stop all</button>
-      <span class="save" id="saveState"></span>
-      <button class="btn" id="openSettings">Device…</button>
-    </div>
+    <div class="eyebrow">WVR Radio32 · <span id="devName">…</span></div>
+    <h1>Library Manager</h1>
+    <p class="lede">Your sounds on this computer on the left, the WVR on the right. Drag sounds across, or copy and paste them, to put them in the WVR's slots or to keep them in your library. The WVR keeps every change as you make it; the library folder is only written when you save it.</p>
   </header>
 
-  <p class="note" id="demoNote" hidden>This is the demo: no WVR is connected. Sounds play on this computer and are kept in this browser only. On a WVR the same page is at <code>http://192.168.4.1</code>.</p>
+  <div class="libnote" id="demoNote" hidden>
+    <p><b>This is the demo.</b> No WVR is connected: the right-hand pane is a pretend one, and its sounds play on this computer. They are kept in this browser only. On a WVR the same page is at <code>http://192.168.4.1</code>.</p>
+  </div>
   <div class="banner" id="banner" hidden></div>
 
-  <main class="bench">
-    <section>
-      <div class="slots-head">
-        <p class="help">Drop sounds on a slot. Drag a slot onto another to swap them; hold ⌥/Alt to copy. Changes are saved on the device as you make them.</p>
-        <div class="opts">
-          <label><input type="checkbox" id="optTrim"> Trim silence</label>
-          <label><input type="checkbox" id="optNorm"> Normalise</label>
+  <div class="lpanes">
+    <section class="lpane" id="paneLib" data-pane="lib" aria-label="Library">
+      <div class="lpane-head">
+        <div class="lpane-title"><h2>Library</h2><span class="lpane-file" id="libName">No folder open</span></div>
+        <div class="btnrow">
+          <button class="btn small" data-act="undo" title="Undo (⌘Z)" aria-label="Undo">↶</button>
+          <button class="btn small" data-act="redo" title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
+          <button class="btn" data-act="open">Open folder…</button>
+          <button class="btn primary" data-act="save" id="libSave">Save</button>
         </div>
       </div>
-      <div class="slots" id="slots"></div>
+      <div class="btnrow ltools">
+        <button class="btn" data-act="play" title="Play on this computer (Space)">▶ Play</button>
+        <button class="btn" data-act="copy" title="⌘C">Copy</button>
+        <button class="btn" data-act="cut" title="⌘X">Cut</button>
+        <button class="btn" data-act="paste" title="⌘V">Paste</button>
+        <button class="btn" data-act="dup" title="⌘D">Dup</button>
+        <button class="btn" data-act="rename" title="⏎">Rename…</button>
+        <button class="btn" data-act="move">Move to…</button>
+        <button class="btn danger" data-act="delete" title="⌫">Delete</button>
+        <button class="btn" data-act="add">Add sounds…</button>
+        <button class="btn primary send" data-act="send" title="Into the WVR's empty slots">To WVR →</button>
+      </div>
+      <div class="lfilter">
+        <input type="search" id="libFind" placeholder="Find a name or category" aria-label="Find">
+        <span class="help lcount" id="libCount"></span>
+      </div>
+      <ul class="llist" id="libList" tabindex="0" aria-label="Sounds in the library"></ul>
+      <div class="libdetail" id="libDetail" hidden></div>
+      <p class="lstatus" id="libStatus" role="status" aria-live="polite"></p>
     </section>
-    <aside class="detail" id="detail"></aside>
-  </main>
 
-  <footer class="help" id="foot"></footer>
+    <section class="lpane" id="paneWvr" data-pane="wvr" aria-label="WVR">
+      <div class="lpane-head">
+        <div class="lpane-title"><h2>WVR</h2><input type="text" class="lpane-proj" id="projName" maxlength="40" aria-label="Project name" placeholder="Project name"></div>
+        <div class="btnrow">
+          <button class="btn small" data-act="undo" title="Undo (⌘Z)" aria-label="Undo">↶</button>
+          <button class="btn small" data-act="redo" title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
+          <button class="btn" id="openSettings">Device…</button>
+        </div>
+      </div>
+      <div class="wbar">
+        <div class="meters" title="Output level"><div class="meter"><i id="mL"></i></div><div class="meter"><i id="mR"></i></div></div>
+        <label class="master">Master <input id="master" type="range" min="-60" max="6" step="0.5"> <output id="masterOut"></output></label>
+        <button class="btn danger" id="stopAll" title="Stop every sound (Esc)">Stop all</button>
+        <span class="save" id="saveState"></span>
+      </div>
+      <div class="btnrow ltools">
+        <button class="btn" data-act="play" title="Play on the WVR (Space)">▶ Play</button>
+        <button class="btn" data-act="copy" title="⌘C">Copy</button>
+        <button class="btn" data-act="cut" title="⌘X">Cut</button>
+        <button class="btn" data-act="paste" title="⌘V">Paste</button>
+        <button class="btn" data-act="up" title="⌥↑" aria-label="Move up">↑</button>
+        <button class="btn" data-act="down" title="⌥↓" aria-label="Move down">↓</button>
+        <button class="btn" data-act="rename" title="⏎">Rename…</button>
+        <button class="btn danger" data-act="delete" title="⌫">Clear</button>
+        <button class="btn" data-act="add">Add sounds…</button>
+        <button class="btn primary send" data-act="send" title="Copy the sounds into the library">← To library</button>
+      </div>
+      <div class="lfilter opts">
+        <span class="help">Sounds going to the WVR:</span>
+        <label><input type="checkbox" id="optTrim"> Trim silence</label>
+        <label><input type="checkbox" id="optNorm"> Normalise</label>
+      </div>
+      <div class="wbody">
+        <ul class="llist" id="wvrList" tabindex="0" aria-label="The WVR's slots"></ul>
+        <div class="slotedit" id="slotEdit" aria-label="The selected slot"></div>
+      </div>
+      <p class="lstatus" id="wvrStatus" role="status" aria-live="polite"></p>
+    </section>
+  </div>
+
+  <details class="lkeys">
+    <summary>Keys and tips</summary>
+    <div class="lkeys-body">
+      <p><b>Select:</b> click a row; SHIFT + click a range; ⌘ (Ctrl) + click to add or remove one; click a category's name for all of it; ⌘A for everything in the pane you clicked last.</p>
+      <p><b>Edit:</b> ⌘C copy · ⌘X cut · ⌘V paste · ⌘D duplicate · ⌫ delete · ⏎ or double-click rename · ⌘Z undo · SHIFT ⌘Z redo · SPACE play / stop · Esc stops everything on the WVR · ⌥↑ ⌥↓ move slots.</p>
+      <p><b>Between the panes:</b> drag sounds from the library onto a slot, or copy them and paste with a slot selected: they go into that slot and the ones after it. <b>To WVR →</b> puts them in the first empty slots instead. Dragging slots onto the library, or <b>← To library</b>, copies their sounds into it as WAV files.</p>
+      <p><b>In the WVR:</b> ▶ on a row plays that slot on the WVR; the selected slot's settings are beside the list and are heard as you change them. Drag a slot onto another to swap the two (hold ⌥ to copy). A slot's MIDI note and pin stay with its number: moving a sound to another slot gives it that slot's triggers.</p>
+      <p><b>The library</b> is a folder on this computer; its folders are the categories. <b>Move to…</b> puts sounds in another category (a new one makes a new folder; <code>Doors/Wood</code> is a folder in a folder). Nothing in the folder changes until you <b>Save</b>. Chrome and Edge save straight into the folder when the page comes from the internet; on the WVR's own page, and in other browsers, Save downloads the library as a zip to unzip in its place.</p>
+      <p><b>Files:</b> WAV and AIFF in any browser; MP3, FLAC, Ogg and others where the browser can read them. The WVR gets them as 16-bit WAV at 44.1 kHz, converted here.</p>
+    </div>
+  </details>
+
+  <div class="confirm lconfirm" id="ask" hidden></div>
+
+  <footer class="foot" id="foot"></footer>
 </div>
 
 <dialog id="settings">
@@ -65,10 +132,14 @@
     <div class="row end"><button class="btn">Close</button></div>
   </form>
 </dialog>
-<input type="file" id="pick" multiple hidden accept="audio/*,.wav,.aif,.aiff,.mp3,.flac,.ogg,.m4a">
+<input type="file" id="pickFiles" multiple hidden accept="audio/*,.wav,.aif,.aiff,.aifc,.mp3,.flac,.ogg,.m4a">
+<input type="file" id="pickFolder" webkitdirectory multiple hidden>
+<datalist id="catList"></datalist>
 
-<script src="js/audio.js?v=20261115"></script>
-<script src="js/demo.js?v=20261115" data-web-only></script>
-<script src="js/app.js?v=20261115"></script>
+<script src="js/audio.js?v=20261115b"></script>
+<script src="js/model.js?v=20261115b"></script>
+<script src="js/zip.js?v=20261115b"></script>
+<script src="js/demo.js?v=20261115b" data-web-only></script>
+<script src="js/app.js?v=20261115b"></script>
 </body>
 </html>

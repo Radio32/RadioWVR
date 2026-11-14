@@ -1,0 +1,91 @@
+<!doctype html>
+<!-- Drives the manager in a browser against the demo device. Run: test/browser.sh -->
+<meta charset="utf-8">
+<body><pre id="result">running</pre>
+<iframe id="f" src="/index.html?demo" style="width:1400px;height:1000px"></iframe>
+<script>
+var out = [], errors = [];
+function log(ok, what) { out.push((ok ? "ok   " : "FAIL ") + what); }
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+var f = document.getElementById("f");
+f.onload = function () {
+  var w = f.contentWindow, d = f.contentDocument;
+  var $ = function (s) { return d.querySelector(s); }, $$ = function (s) { return d.querySelectorAll(s); };
+  w.addEventListener("error", function (e) { errors.push(e.message); });
+  w.addEventListener("unhandledrejection", function (e) { errors.push("promise: " + (e.reason && e.reason.message || e.reason)); });
+  function key(k, mods) { d.dispatchEvent(new KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true }, mods || {}))); }
+  function click(el, mods) {
+    el.dispatchEvent(new MouseEvent("mousedown", Object.assign({ bubbles: true }, mods || {})));
+    el.dispatchEvent(new MouseEvent("click", Object.assign({ bubbles: true }, mods || {})));
+  }
+  function dragTo(src, dst, mods) {
+    var dt = new DataTransfer();
+    src.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
+    dst.dispatchEvent(new DragEvent("dragover", Object.assign({ bubbles: true, cancelable: true, dataTransfer: dt }, mods || {})));
+    dst.dispatchEvent(new DragEvent("drop", Object.assign({ bubbles: true, cancelable: true, dataTransfer: dt }, mods || {})));
+    src.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
+  }
+  function texts(sel) { return Array.prototype.map.call($$(sel), function (e) { return e.textContent; }); }
+  function libNames() { return texts("#libList .lrow .lname"); }
+  function slotNames() { return texts("#wvrList .lrow .lname"); }
+  function cats() { return texts("#libList .lstyle-name"); }
+
+  wait(1500).then(function () {
+    log(slotNames().slice(0, 4).join() === "Bell,Wind,Knock,Empty", "WVR shows the demo slots: " + slotNames().slice(0, 4));
+    log($$("#wvrList .go").length === 3, "three play buttons");
+    click($('#libList [data-act="examples"]'));
+    return wait(800);
+  }).then(function () {
+    log(libNames().length === 6 && cats().join() === "Bells,Doors,Weather", "example library: " + libNames() + " in " + cats());
+    click($$("#libList .lrow")[1]);
+    log(!$("#libDetail").hidden && $("#libRename").value === "Bell low", "library detail shows the selected sound");
+    dragTo($$("#libList .lrow")[1], $$("#wvrList .lrow")[3]);
+    return wait(2500);
+  }).then(function () {
+    log(slotNames()[3] === "Bell low", "dragged into slot 4: " + slotNames()[3]);
+    click($$("#libList .lrow")[2]); click($$("#libList .lrow")[3], { shiftKey: true });
+    click($('#paneLib [data-act="send"]'));
+    return wait(3000);
+  }).then(function () {
+    log(slotNames()[4] === "Knock" && slotNames()[5] === "Knock twice", "To WVR filled empty slots 5 and 6: " + slotNames().slice(4, 6));
+    click($$("#wvrList .lrow")[3]);
+    click($('#paneWvr [data-act="up"]'));
+    log(slotNames()[2] === "Bell low" && slotNames()[3] === "Knock", "↑ moved slot 4 to 3: " + slotNames().slice(2, 4));
+    click($$("#wvrList .lrow")[0]); key("c", { metaKey: true });
+    click($$("#libList .lrow")[0]); key("v", { metaKey: true });
+    return wait(800);
+  }).then(function () {
+    log(libNames().length === 7 && libNames().indexOf("Bell 2") >= 0, "pasted slot 1 into the library as Bell 2: " + libNames());
+    var r = $("#libRename"); r.value = "Church bell"; r.dispatchEvent(new Event("change", { bubbles: true }));
+    log(libNames().indexOf("Church bell") >= 0, "renamed");
+    var c = $("#libCat"); c.value = "Bells/Church"; c.dispatchEvent(new Event("change", { bubbles: true }));
+    log(cats().indexOf("Bells/Church") >= 0, "moved to a new category: " + cats());
+    var n = libNames().length;
+    key("Backspace");
+    var after = libNames().length;
+    key("z", { metaKey: true });
+    log(after === n - 1 && libNames().length === n, "delete then undo: " + n + " → " + after + " → " + libNames().length);
+    click($$("#wvrList .lrow")[0]);
+    var g = $('#slotEdit [data-live="gain"]'); g.value = "-6";
+    g.dispatchEvent(new Event("input", { bubbles: true })); g.dispatchEvent(new Event("change", { bubbles: true }));
+    log(/-6\.0 dB/.test($$("#wvrList .lrow .lmeta")[0].textContent), "level shows on the row: " + $$("#wvrList .lrow .lmeta")[0].textContent);
+    var lp = $('#slotEdit [data-set="loop"]'); lp.checked = true; lp.dispatchEvent(new Event("change", { bubbles: true }));
+    log(/loop/.test($$("#wvrList .lrow .lmeta")[0].textContent), "loop shows on the row");
+    click($$("#wvrList .lrow .go")[1]);
+    return wait(600);
+  }).then(function () {
+    log($$("#wvrList .lrow")[1].classList.contains("playing"), "▶ on row 2 plays it");
+    key("Escape");
+    var weather = Array.prototype.filter.call($$("#libList .lstyle"), function (e) { return e.dataset.cat === "Weather"; })[0];
+    dragTo($$("#wvrList .lrow")[1], weather);
+    return wait(800);
+  }).then(function () {
+    log(libNames().filter(function (n) { return n.indexOf("Wind") === 0; }).length === 2, "slot dragged into Weather: " + libNames());
+    log($("#libName").textContent.indexOf("changed") >= 0, "the library shows it has changes: " + $("#libName").textContent);
+    log(!errors.length, "no script errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+    document.getElementById("result").textContent = out.join("\n") + "\nDONE";
+  }).catch(function (e) {
+    document.getElementById("result").textContent = out.join("\n") + "\nSTOPPED: " + e.message + "\n" + errors.join("\n");
+  });
+};
+</script>
