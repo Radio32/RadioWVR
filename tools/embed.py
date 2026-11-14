@@ -6,9 +6,11 @@ root = pathlib.Path(__file__).resolve().parent.parent
 web = root / "docs"
 html = (web / "index.html").read_text()
 html = re.sub(r'<script src="[^"]+" data-web-only></script>\n?', "", html)   # the browser demo stays out
-html = re.sub(r'<link rel="stylesheet" href="([^"]+)">',
+html = re.sub(r'<link [^>]*data-web-only>\n?', "", html)                       # web fonts: no internet on the WVR
+html = re.sub(r'<script src="[^"]+" data-web-only></script>\n?', "", html)    # the browser demo
+html = re.sub(r'<link rel="stylesheet" href="([^"?]+)(\?[^"]*)?">',
               lambda m: "<style>\n" + (web / m.group(1)).read_text() + "</style>", html)
-html = re.sub(r'<script src="([^"]+)"></script>',
+html = re.sub(r'<script src="([^"?]+)(\?[^"]*)?"></script>',
               lambda m: "<script>\n" + (web / m.group(1)).read_text().replace("</script", "<\\/script") + "</script>", html)
 data = gzip.compress(html.encode(), 9, mtime=0)
 out = root / "firmware" / "WvrRadio32" / "web_bundle.h"
