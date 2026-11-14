@@ -14,8 +14,10 @@ var WVRDemo = (function () {
 
   // ---------------------------------------------------------------- keeping things (this browser only)
 
+  // The browser's storage may be slow, refused or missing: the demo then runs without it.
   function openDb() {
     return new Promise(function (done) {
+      setTimeout(done, 1500);
       try {
         var r = indexedDB.open("wvr-demo", 1);
         r.onupgradeneeded = function () { r.result.createObjectStore("files"); };
@@ -27,9 +29,12 @@ var WVRDemo = (function () {
   function dbAll() {
     return new Promise(function (done) {
       if (!db) return done();
-      var st = db.transaction("files").objectStore("files"), keys = st.getAllKeys(), vals = st.getAll();
-      vals.onsuccess = function () { keys.result.forEach(function (k, i) { files[k] = new Uint8Array(vals.result[i]); }); done(); };
-      vals.onerror = function () { done(); };
+      setTimeout(done, 1500);
+      try {
+        var st = db.transaction("files").objectStore("files"), keys = st.getAllKeys(), vals = st.getAll();
+        vals.onsuccess = function () { keys.result.forEach(function (k, i) { files[k] = new Uint8Array(vals.result[i]); }); done(); };
+        vals.onerror = function () { done(); };
+      } catch (e) { done(); }
     });
   }
   function dbPut(name, bytes) { try { if (db) db.transaction("files", "readwrite").objectStore("files").put(bytes, name); } catch (e) {} }
@@ -63,7 +68,8 @@ var WVRDemo = (function () {
     ready = openDb().then(dbAll).then(function () {
       var saved = null;
       try { saved = JSON.parse(localStorage.getItem("wvr-demo-project")); } catch (e) {}
-      if (saved && saved.slots) project = saved; else seed();
+      var missing = saved && saved.slots && saved.slots.some(function (x) { return x && x.file && !files[x.file]; });
+      if (saved && saved.slots && !missing) project = saved; else seed();
     });
     return ready;
   }
