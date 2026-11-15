@@ -49,8 +49,21 @@ eq(WVR.displayName("Door slam.aiff"), "Door slam", "display name");
 var snd = { rate: 44100, channels: [new Float32Array(44100)] };
 for (var i = 0; i < 22050; i++) snd.channels[0][i] = 0.5;
 var hex = WVR.peaksOf(snd), pk = WVR.peaksFrom(hex);
-eq(hex.length, 192, "96 peaks");
-ok(Math.abs(pk[0] - 0.5) < 0.01 && pk[95] === 0, "peaks follow the sound");
+eq(hex.length, 800, "400 peaks");
+ok(Math.abs(pk[0] - 0.5) < 0.01 && pk[399] === 0, "peaks follow the sound");
+
+// start and end points
+var pt = WVR.part({ dur: 4, start: 0, end: 0 });
+ok(pt.a === 0 && pt.b === 4 && pt.len === 4, "no points: the whole file");
+pt = WVR.part({ dur: 4, start: 1, end: 2.5 });
+ok(pt.a === 1 && pt.b === 2.5 && pt.len === 1.5, "start and end");
+pt = WVR.part({ dur: 4, start: 3, end: 2 });
+ok(pt.a === 0 && pt.b === 4, "start after end: the whole file, as on the device");
+pt = WVR.part({ dur: 4, start: 1, end: 9 });
+ok(pt.a === 1 && pt.b === 4, "an end past the file is the end of the file");
+var tp = WVR.normalise({ slots: [{ file: "a.wav", start: 1, end: 2 }] }, 2);
+WVR.swap(tp, 0, 1);
+ok(tp.slots[1].start === 1 && tp.slots[1].end === 2 && tp.slots[0].start === 0, "the points travel with the sound");
 
 // what goes to the device: 16-bit WAV at 44.1 kHz, mono when both sides are the same
 var st = { rate: 48000, channels: [new Float32Array(4800), new Float32Array(4800)], sourceBits: 24 };

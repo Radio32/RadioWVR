@@ -233,16 +233,18 @@ static void audio_task(void*) {
 
 // ------------------------------------------------------------------ streamer
 
-// Reads `frames` frames at the file's frame `at` into `dst` as stereo. Returns frames read.
+// Reads `frames` frames from frame `at` of the slot's part of the file into `dst` as stereo.
+// Returns frames read.
 static uint32_t read_frames(const Slot& s, uint32_t at, uint32_t frames, int16_t* dst, uint32_t dstAt, uint32_t dstMask) {
   uint32_t bpf = 2 * s.channels, done = 0;
+  uint32_t partEnd = s.dataOff + (s.startFrame + s.frames) * bpf;
   while (done < frames) {
-    uint32_t off = s.dataOff + (at + done) * bpf;
+    uint32_t off = s.dataOff + (s.startFrame + at + done) * bpf;
     uint32_t bytes = (frames - done) * bpf;
     if (bytes > READ_BYTES) bytes = READ_BYTES;
     // end on a sector boundary when that leaves whole frames, so the next read starts aligned
     uint32_t alignedEnd = (off + bytes) & ~511u;
-    if (alignedEnd > off && (alignedEnd - off) % bpf == 0 && off + bytes < s.dataOff + s.frames * bpf) bytes = alignedEnd - off;
+    if (alignedEnd > off && (alignedEnd - off) % bpf == 0 && off + bytes < partEnd) bytes = alignedEnd - off;
     if (lseek(s.fd, off, SEEK_SET) < 0) break;
     int got = read(s.fd, readBuf, bytes);
     if (got <= 0) break;
@@ -340,7 +342,7 @@ void engine_status(EngineStatus* st) {
   peakL = peakR = 0;
 }
 
-bool engine_load_slot(int i, const char* file) {
+bool engine_load_slot(int i, const char* file, float startSec, float endSec) {
   Slot& s = g_slots[i];
   // silence the slot, wait for its voices and for the streamer to let go of the file
   s.loaded = false;
@@ -355,7 +357,8 @@ bool engine_load_slot(int i, const char* file) {
   xSemaphoreTake(streamMux, portMAX_DELAY);
   if (s.fd >= 0) { close(s.fd); s.fd = -1; }
   if (s.head) { heap_caps_free(s.head); s.head = nullptr; }
-  s.file[0] = 0; s.err[0] = 0; s.frames = 0;
+  s.file[0] = 0; s.err[0] = 0; s.frames = 0; s.startFrame = 0;
+  s.startSec = startSec; s.endSec = endSec;
 
   bool ok = true;
   if (file && file[0]) {
@@ -367,8 +370,13 @@ bool engine_load_slot(int i, const char* file) {
     if (ok) { snd_path(path, sizeof path, file); ok = wav_probe(path, &w, &err); }
     if (ok) {
       s.fd = open(path, O_RDONLY);
-      s.dataOff = w.dataOff; s.frames = w.frames; s.rate = w.rate; s.channels = w.channels;
-      s.headFrames = w.frames < HEAD_FRAMES ? w.frames : HEAD_FRAMES;
+      // the part between the start and end points; the whole file if they make no sense
+      uint32_t a = startSec > 0 ? (uint32_t)(startSec * w.rate + 0.5f) : 0;
+      uint32_t b = endSec > 0 ? (uint32_t)(endSec * w.rate + 0.5f) : w.frames;
+      if (b > w.frames) b = w.frames;
+      if (a >= b) { a = 0; b = w.frames; }
+      s.dataOff = w.dataOff; s.startFrame = a; s.frames = b - a; s.rate = w.rate; s.channels = w.channels;
+      s.headFrames = s.frames < HEAD_FRAMES ? s.frames : HEAD_FRAMES;
       s.head = (int16_t*)heap_caps_malloc(s.headFrames * 4, MALLOC_CAP_SPIRAM);
       if (s.fd < 0) { ok = false; err = "can't open file"; }
       else if (!s.head) { ok = false; err = "out of memory"; }

@@ -352,7 +352,7 @@
                 var s = project.slots[i], keep = s.file ? WVR.sound(s) : null;
                 if (!keep) WVR.clear(project, i);         // a new sound in an empty slot starts from the defaults
                 s.file = name; s.src = snd.src || snd.name; s.dur = prep.channels[0].length / prep.rate; s.ch = prep.channels.length; s.peaks = WVR.peaksOf(prep);
-                s.name = snd.name;
+                s.name = snd.name; s.start = 0; s.end = 0;      // a new sound plays whole
               });
             });
         }).catch(function (e) {
@@ -523,7 +523,7 @@
 
   function wvrTags(s) {
     var t = [];
-    if (s.file) t.push(WVR.fmtDur(s.dur));
+    if (s.file) t.push(WVR.fmtDur(WVR.part(s).len) + (WVR.part(s).len < s.dur - 0.0005 ? " ✂" : ""));
     if (s.file && s.gain) t.push(WVR.fmtDb(s.gain));
     if (s.loop) t.push("loop");
     if (s.hold) t.push("hold");
@@ -614,7 +614,7 @@
     var groups = [[0, "none"]]; for (var g = 1; g <= 8; g++) groups.push([g, "group " + g]);
     d.innerHTML =
       '<div class="dhead"><span class="dno">' + num + '</span><input type="text" data-set="name" maxlength="40" placeholder="Name" value="' + esc(s.name) + '" aria-label="Slot name"></div>' +
-      '<canvas class="lbig"></canvas>' +
+      (s.file ? trimHtml(s) : '<canvas class="lbig"></canvas>') +
       '<p class="help">' + (s.file ? esc(s.src) + " · " + WVR.fmtDur(s.dur) + " · " + (s.ch === 1 ? "mono" : "stereo") : "Empty. Drag a sound here from the library, or add one from this computer.") + "</p>" +
       '<div class="btnrow">' + (s.file ? '<button class="btn primary" id="wPlay">▶ Play</button>' : "") +
         '<button class="btn" data-dact="pick">' + (s.file ? "Replace…" : "Add a sound…") + "</button>" +
@@ -639,7 +639,90 @@
       '<div class="checks"><label><input type="checkbox" data-set="vel"' + (s.vel ? " checked" : "") + "> MIDI velocity sets the level</label></div>" +
       '<p class="help">The triggers belong to the slot number: a sound moved to another slot gets that slot\'s triggers.</p>';
     drawWave(d.querySelector(".lbig"), s.peaks);
+    if (s.file) { var pt = WVR.part(s); placeTrim(pt.a, pt.b); }
     drawStatus();
+  }
+
+  // ---------------------------------------------------------------- start and end points
+
+  // The slot's waveform with a handle at each end of the part that plays. Dragging one is
+  // shown at once and sent to the WVR when let go; the file itself is never changed.
+  function trimHtml(s) {
+    var pt = WVR.part(s), whole = pt.len >= s.dur - 0.0005;
+    return '<div class="trim" id="trim">' +
+        '<canvas class="lbig"></canvas><div class="tshade" id="tshL"></div><div class="tshade" id="tshR"></div>' +
+        '<div class="thandle" data-h="start" tabindex="0" role="slider" aria-label="Start point"><i></i></div>' +
+        '<div class="thandle" data-h="end" tabindex="0" role="slider" aria-label="End point"><i></i></div>' +
+      "</div>" +
+      '<div class="trimrow">' +
+        '<label>Start <input type="number" data-trim="start" min="0" max="' + s.dur.toFixed(3) + '" step="0.001" value="' + pt.a.toFixed(3) + '"> s</label>' +
+        '<label>End <input type="number" data-trim="end" min="0" max="' + s.dur.toFixed(3) + '" step="0.001" value="' + pt.b.toFixed(3) + '"> s</label>' +
+        '<span class="help" id="trimLen">' + WVR.fmtDur(pt.len) + (whole ? "" : " of " + WVR.fmtDur(s.dur)) + "</span>" +
+        (whole ? "" : '<button class="btn small" data-dact="whole">Whole file</button>') +
+      "</div>";
+  }
+  function placeTrim(a, b) {
+    var s = project.slots[panes.wvr.cursor], box = $("trim"); if (!box || !s.dur) return;
+    var pa = a / s.dur * 100, pb = b / s.dur * 100;
+    $("tshL").style.width = pa + "%";
+    $("tshR").style.left = pb + "%"; $("tshR").style.width = (100 - pb) + "%";
+    var hs = box.querySelector('[data-h="start"]'), he = box.querySelector('[data-h="end"]');
+    hs.style.left = pa + "%"; he.style.left = pb + "%";
+    hs.setAttribute("aria-valuenow", a.toFixed(3)); he.setAttribute("aria-valuenow", b.toFixed(3));
+    hs.setAttribute("aria-valuetext", a.toFixed(3) + " s"); he.setAttribute("aria-valuetext", b.toFixed(3) + " s");
+    var ia = document.querySelector('[data-trim="start"]'), ib = document.querySelector('[data-trim="end"]');
+    if (ia && document.activeElement !== ia) ia.value = a.toFixed(3);
+    if (ib && document.activeElement !== ib) ib.value = b.toFixed(3);
+    var len = $("trimLen"); if (len) len.textContent = WVR.fmtDur(b - a) + (b - a >= s.dur - 0.0005 ? "" : " of " + WVR.fmtDur(s.dur));
+  }
+  var MIN_PART = 0.01;   // seconds
+  // Keeps a and b inside the file and apart; `moving` is the one that gives way.
+  function fitTrim(dur, a, b, moving) {
+    a = Math.max(0, Math.min(dur, a)); b = Math.max(0, Math.min(dur, b));
+    if (b - a < MIN_PART) { if (moving === "start") a = Math.max(0, b - MIN_PART); else b = Math.min(dur, a + MIN_PART); }
+    return { a: Math.round(a * 1000) / 1000, b: Math.round(b * 1000) / 1000 };
+  }
+  function commitTrim(i, a, b) {
+    var s = project.slots[i];
+    var start = a <= 0.0005 ? 0 : a, end = b >= s.dur - 0.0005 ? 0 : b;
+    if (start === (s.start || 0) && end === (s.end || 0)) return placeTrim(WVR.part(s).a, WVR.part(s).b);
+    changeWvr(function () { s.start = start; s.end = end; });
+  }
+  var trimDrag = null;
+  function trimDown(e) {
+    var box = e.target.closest(".trim"); if (!box || e.button) return;
+    var s = project.slots[panes.wvr.cursor], pt = WVR.part(s), r = box.getBoundingClientRect();
+    var t = (e.clientX - r.left) / r.width * s.dur, h = e.target.closest(".thandle");
+    // a handle, or else whichever handle is nearer to where the waveform was pressed
+    var which = h ? h.dataset.h : Math.abs(t - pt.a) <= Math.abs(t - pt.b) ? "start" : "end";
+    trimDrag = { i: panes.wvr.cursor, which: which, a: pt.a, b: pt.b, box: box, dur: s.dur };
+    box.setPointerCapture(e.pointerId);
+    box.classList.add("dragging");
+    e.preventDefault();
+    trimMove(e);
+  }
+  function trimMove(e) {
+    if (!trimDrag) return;
+    var d = trimDrag, r = d.box.getBoundingClientRect(), t = (e.clientX - r.left) / r.width * d.dur;
+    var f = d.which === "start" ? fitTrim(d.dur, t, d.b, "start") : fitTrim(d.dur, d.a, t, "end");
+    d.a = f.a; d.b = f.b;
+    placeTrim(d.a, d.b);
+  }
+  function trimUp() {
+    if (!trimDrag) return;
+    var d = trimDrag; trimDrag = null;
+    d.box.classList.remove("dragging");
+    commitTrim(d.i, d.a, d.b);
+  }
+  function trimKey(e) {
+    var h = e.target.closest(".thandle"); if (!h) return;
+    var dir = e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : 0;
+    if (!dir) return;
+    e.preventDefault(); e.stopPropagation();
+    var i = panes.wvr.cursor, s = project.slots[i], pt = WVR.part(s), by = dir * (e.shiftKey ? 0.1 : 0.01);
+    var f = h.dataset.h === "start" ? fitTrim(s.dur, pt.a + by, pt.b, "start") : fitTrim(s.dur, pt.a, pt.b + by, "end");
+    commitTrim(i, f.a, f.b);
+    var again = document.querySelector('.thandle[data-h="' + h.dataset.h + '"]'); if (again) again.focus();
   }
 
   function renderActive() {
@@ -1000,6 +1083,7 @@
     var a = b.dataset.dact, s = project.slots[panes.wvr.cursor];
     if (a === "pick") wvrAct("add");
     else if (a === "clear") changeWvr(function () { WVR.clear(project, panes.wvr.cursor); });
+    else if (a === "whole") changeWvr(function () { s.start = 0; s.end = 0; });
     else if (a === "tolib") wvrToLibrary([panes.wvr.cursor], targetCat());
     else if (a === "download") getDeviceFile(s.file).then(function (bytes) {
       var link = document.createElement("a");
@@ -1007,6 +1091,11 @@
       document.body.appendChild(link); link.click(); link.remove();
     }, function (err) { wvrStatus(err.message, "err"); });
   });
+  slotEdit.addEventListener("pointerdown", trimDown);
+  slotEdit.addEventListener("pointermove", trimMove);
+  slotEdit.addEventListener("pointerup", trimUp);
+  slotEdit.addEventListener("pointercancel", trimUp);
+  slotEdit.addEventListener("keydown", trimKey);
   slotEdit.addEventListener("input", function (e) {
     var key = e.target.dataset.live; if (!key) return;
     $("o_" + key).textContent = FMT[key](e.target.value);
@@ -1015,6 +1104,12 @@
   slotEdit.addEventListener("change", function (e) {
     var t = e.target, i = panes.wvr.cursor;
     if (t.id === "dPin") { changeWvr(function () { WVR.setPin(project, i, Number(t.value)); }); return; }
+    if (t.dataset.trim) {
+      var s = project.slots[i], pt = WVR.part(s), v0 = Number(t.value);
+      if (!isFinite(v0)) return placeTrim(pt.a, pt.b);
+      var f = t.dataset.trim === "start" ? fitTrim(s.dur, v0, pt.b, "start") : fitTrim(s.dur, pt.a, v0, "end");
+      return commitTrim(i, f.a, f.b);
+    }
     var key = t.dataset.live || t.dataset.set; if (!key) return;
     var v = t.type === "checkbox" ? t.checked : t.type === "range" || t.type === "number" || "num" in t.dataset ? Number(t.value) : t.value;
     if (t.type === "number") v = Math.max(Number(t.min), Math.min(Number(t.max), Math.round(v) || 0));

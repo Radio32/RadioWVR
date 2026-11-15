@@ -143,7 +143,11 @@ var WVRDemo = (function () {
     if (s.fadeIn) { v.gain.gain.setValueAtTime(0, t); v.gain.gain.linearRampToValueAtTime(g, t + s.fadeIn / 1000); } else v.gain.gain.value = g;
     v.src.connect(v.gain); v.gain.connect(v.pan); v.pan.connect(master);
     v.src.onended = function () { voices = voices.filter(function (x) { return x !== v; }); };
-    v.src.start();
+    // only the part between the start and end points plays and loops, as on the device
+    var a = Math.max(0, s.start || 0), b = s.end > 0 ? Math.min(s.end, buf.duration) : buf.duration;
+    if (!(a < b)) { a = 0; b = buf.duration; }
+    v.src.loopStart = a; v.src.loopEnd = b;
+    if (s.loop) v.src.start(t, a); else v.src.start(t, a, b - a);
     voices.push(v);
     while (voices.length > 8) { var old = voices.shift(); try { old.src.stop(); } catch (e) {} }   // the WVR plays 8 at once
   }

@@ -173,3 +173,19 @@ input.lpane-proj:hover, input.lpane-proj:focus { border-color: var(--line); colo
 dialog { background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 18px; width: min(520px, 92vw); }
 dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .dlg { display: grid; gap: 12px; }
+
+/* --- the start and end points of a slot's sound --------------------------- */
+.trim { position: relative; touch-action: none; cursor: ew-resize; user-select: none; -webkit-user-select: none; }
+.trim .lbig { height: 96px; }
+.tshade { position: absolute; top: 1px; bottom: 1px; left: 0; width: 0; background: var(--bg); opacity: .72; pointer-events: none; }
+.thandle { position: absolute; top: 0; bottom: 0; width: 18px; margin-left: -9px; cursor: ew-resize; outline: none; }
+.thandle::before { content: ""; position: absolute; top: 0; bottom: 0; left: 8px; width: 2px; background: var(--accent); }
+.thandle i { position: absolute; left: 3px; width: 12px; height: 16px; border-radius: 3px; background: var(--accent); }
+.thandle[data-h="start"] i { top: 0; }
+.thandle[data-h="end"] i { bottom: 0; }
+.thandle:focus-visible i { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent); }
+.trim.dragging .thandle i { transform: scale(1.1); }
+.trimrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: 13px; }
+.trimrow label { display: flex; align-items: center; gap: 6px; font-weight: 500; }
+.trimrow input { width: 88px; font-family: var(--font-mono, monospace); }
+.trimrow .btn { margin-left: auto; }

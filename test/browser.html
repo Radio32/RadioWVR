@@ -81,6 +81,22 @@ f.onload = function () {
     return wait(800);
   }).then(function () {
     log(libNames().filter(function (n) { return n.indexOf("Wind") === 0; }).length === 2, "slot dragged into Weather: " + libNames());
+    // start and end points: drag the handles on slot 1's waveform
+    click($$("#wvrList .lrow")[0]);
+    var box = $("#trim"), r = box.getBoundingClientRect();
+    function ptr(type, el, x) { el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, clientX: r.left + r.width * x, clientY: r.top + 10 })); }
+    ptr("pointerdown", box.querySelector('[data-h="start"]'), 0); ptr("pointermove", box, 0.25); ptr("pointerup", box, 0.25);
+    box = $("#trim");
+    ptr("pointerdown", box.querySelector('[data-h="end"]'), 1); ptr("pointermove", box, 0.75); ptr("pointerup", box, 0.75);
+    var a = Number($('[data-trim="start"]').value), b = Number($('[data-trim="end"]').value);
+    log(a > 0 && Math.abs(b - 3 * a) < 0.01, "handles set the start and end: " + a + " to " + b + " s");
+    log(/\u2702/.test($$("#wvrList .lrow .lmeta")[0].textContent), "the row shows the sound is shortened: " + $$("#wvrList .lrow .lmeta")[0].textContent);
+    var se = $('[data-trim="start"]'); se.value = "0.1"; se.dispatchEvent(new Event("change", { bubbles: true }));
+    log(Number($('[data-trim="start"]').value) === 0.1 && $(".thandle").style.left !== "0%", "typed start point: " + $('[data-trim="start"]').value);
+    click($('[data-dact="whole"]'));
+    log(!$('[data-dact="whole"]') && !/\u2702/.test($$("#wvrList .lrow .lmeta")[0].textContent), "Whole file resets the points");
+    key("z", { metaKey: true });
+    log(/\u2702/.test($$("#wvrList .lrow .lmeta")[0].textContent), "undo brings the points back");
     log($("#libName").textContent.indexOf("changed") >= 0, "the library shows it has changes: " + $("#libName").textContent);
     log(!errors.length, "no script errors" + (errors.length ? ": " + errors.join(" | ") : ""));
     document.getElementById("result").textContent = out.join("\n") + "\nDONE";

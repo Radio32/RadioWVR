@@ -129,7 +129,9 @@ static bool apply(const char* json, bool save, char* err, size_t errn) {
     const cJSON* o = cJSON_GetArrayItem(slots, i);     // NULL past the end: an empty slot
     const char* file = o ? str(o, "file", "") : "";
     Slot& s = g_slots[i];
-    if (strcmp(file, s.file)) engine_load_slot(i, file);
+    // a new file, or new start and end points: the slot reads its first part again
+    float st = o ? clampf(num(o, "start", 0), 0, 86400) : 0, en = o ? clampf(num(o, "end", 0), 0, 86400) : 0;
+    if (strcmp(file, s.file) || st != s.startSec || en != s.endSec) engine_load_slot(i, file, st, en);
     cJSON empty = {}; empty.type = cJSON_Object;
     apply_params(s.p, o ? o : &empty);
   }

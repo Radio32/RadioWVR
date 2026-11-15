@@ -25,7 +25,9 @@ struct Slot {
   char file[FILE_NAME_MAX];    // name in /sd/snd, "" when empty
   char err[40];                // why the file couldn't be loaded
   int fd;
-  uint32_t dataOff, frames, rate;
+  float startSec, endSec;      // the part of the file that plays, as asked for (end 0: to the end)
+  uint32_t startFrame;         // where that part begins in the file
+  uint32_t dataOff, frames, rate;   // frames: the length of that part
   uint16_t channels;
   int16_t* head;               // the first headFrames frames, as stereo
   uint32_t headFrames;
@@ -45,7 +47,8 @@ void engine_begin();
 void engine_play(int slot, uint8_t velocity);   // slots are 0-based here
 void engine_release(int slot);                  // key/pin up: stops the slot if it is set to hold
 void engine_stop(int slot);                     // -1: everything
-bool engine_load_slot(int slot, const char* file);   // "" empties the slot
+// "" empties the slot. Plays the file from startSec to endSec (0: to the end).
+bool engine_load_slot(int slot, const char* file, float startSec, float endSec);
 void engine_set_master_db(float db);
 float engine_master_db();
 void engine_status(EngineStatus* st);

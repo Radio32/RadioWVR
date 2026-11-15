@@ -8,13 +8,13 @@
 var WVR = (function () {
 
   // What belongs to the sound and travels with it when a slot is moved or copied...
-  var SOUND_KEYS = ["name", "file", "gain", "pan", "pitch", "loop", "hold", "retrig", "group", "fadeIn", "fadeOut", "vel", "src", "dur", "ch", "peaks"];
+  var SOUND_KEYS = ["name", "file", "gain", "pan", "pitch", "loop", "hold", "retrig", "group", "fadeIn", "fadeOut", "vel", "start", "end", "src", "dur", "ch", "peaks"];
   // ...and what belongs to the slot's position: its triggers stay where they are.
   var NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
   function emptySound() {
     return { name: "", file: "", gain: 0, pan: 0, pitch: 0, loop: false, hold: false, retrig: "overlap", group: 0,
-             fadeIn: 0, fadeOut: 20, vel: false, src: "", dur: 0, ch: 0, peaks: "" };
+             fadeIn: 0, fadeOut: 20, vel: false, start: 0, end: 0, src: "", dur: 0, ch: 0, peaks: "" };
   }
   function emptySlot(i) { var s = emptySound(); s.note = 36 + i; s.pin = 0; return s; }
 
@@ -60,8 +60,16 @@ var WVR = (function () {
   }
   function displayName(original) { return String(original).replace(/\.[^.]*$/, "").slice(0, 40); }
 
-  // 96 peak values as hex: the waveform is drawn without fetching the audio.
-  var PEAKS = 96;
+  // The part of a slot's sound that plays, in seconds: start to end (end 0 = the end of the file).
+  // Nonsense points play the whole file, as on the device.
+  function part(s) {
+    var dur = s.dur || 0, a = Math.max(0, s.start || 0), b = s.end > 0 ? Math.min(s.end, dur) : dur;
+    if (!(a < b)) { a = 0; b = dur; }
+    return { a: a, b: b, len: b - a };
+  }
+
+  // 400 peak values as hex: the waveform is drawn, and the start and end set, without fetching the audio.
+  var PEAKS = 400;
   function peaksOf(sound) {
     var n = sound.channels[0].length, out = "";
     for (var i = 0; i < PEAKS; i++) {
@@ -80,7 +88,7 @@ var WVR = (function () {
 
   return { emptySlot: emptySlot, normalise: normalise, serialise: serialise, swap: swap, copy: copy, clear: clear, setPin: setPin,
            sound: sound, setSound: setSound, usedFiles: usedFiles, fileName: fileName, displayName: displayName,
-           peaksOf: peaksOf, peaksFrom: peaksFrom, noteName: noteName, fmtDur: fmtDur, fmtDb: fmtDb };
+           peaksOf: peaksOf, peaksFrom: peaksFrom, part: part, noteName: noteName, fmtDur: fmtDur, fmtDb: fmtDb };
 })();
 
 
