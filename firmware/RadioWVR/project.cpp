@@ -26,7 +26,7 @@ static float clampf(double v, float lo, float hi) { return v < lo ? lo : v > hi 
 static void device_defaults() {
   uint8_t mac[6];
   esp_read_mac(mac, ESP_MAC_WIFI_STA);
-  snprintf(g_device.name, sizeof g_device.name, "WVR-%02X%02X", mac[4], mac[5]);
+  snprintf(g_device.name, sizeof g_device.name, "RadioWVR-%02X%02X", mac[4], mac[5]);
   strcpy(g_device.apPass, "12345678");
   g_device.staSsid[0] = g_device.staPass[0] = 0;
   g_device.oscPort = 8000;

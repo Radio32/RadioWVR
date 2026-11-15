@@ -9,7 +9,7 @@
 var WVRDemo = (function () {
   var SLOTS = 16;
   var project = { name: "Demo project", master: 0, slots: [], pins: [] }, rev = 1, files = {};
-  var device = { name: "WVR-DEMO", apPass: "12345678", staSsid: "", staPass: "", oscPort: 8000, midiChannel: 0 };
+  var device = { name: "RadioWVR-DEMO", apPass: "12345678", staSsid: "", staPass: "", oscPort: 8000, midiChannel: 0 };
   var db = null, ready = null;
 
   // ---------------------------------------------------------------- keeping things (this browser only)

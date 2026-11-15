@@ -1,4 +1,4 @@
-// WVR Radio32: a cue player for the WVR board. See README.md.
+// RadioWVR: a cue player for the WVR board. See README.md.
 #include "config.h"
 #include "storage.h"
 #include "engine.h"
@@ -36,7 +36,7 @@ static void crash_guard() {
 
 void setup() {
   Serial.begin(115200);
-  Serial.printf("\nWVR Radio32 %s\n", FW_VERSION);
+  Serial.printf("\nRadioWVR %s\n", FW_VERSION);
   crash_guard();
   if (!storage_begin()) Serial.println("The eMMC could not be mounted: no sounds, settings are not kept.");
   device_load();

@@ -569,7 +569,7 @@
     var b = $("wPlay"); if (b) b.textContent = playing[panes.wvr.cursor] ? "■ Stop" : "▶ Play";
     $("foot").innerHTML = "Firmware " + esc(device.fw) + " · " + status.voices + " of " + device.voices + " voices playing" +
       (status.under ? " · waited for storage " + status.under + "×" : "") + " · " + gb(device.space.free) + " free of " + gb(device.space.total) +
-      ' · <a href="https://github.com/Radio32/Wvr_Radio32">Source</a>';
+      ' · <a href="https://github.com/Radio32/RadioWVR">Source</a>';
   }
   function gb(b) { return (b / 1073741824).toFixed(1) + " GB"; }
 

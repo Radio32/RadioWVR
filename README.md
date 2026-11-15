@@ -1,4 +1,4 @@
-# WVR Radio32
+# RadioWVR
 
 New firmware and a manager for the [WVR](https://github.com/marchingband/wvr) audio board
 (ESP32-WROVER, 8 GB eMMC, I2S DAC), written from scratch for theatre work: a few sounds per
@@ -6,7 +6,7 @@ device, triggered over WiFi, MIDI or pins, set up from a web page that anyone ca
 
 It does not read the original firmware's storage. The first start formats the eMMC.
 
-**Try the manager without a WVR:** https://radio32.github.io/Wvr_Radio32/ (a demo: the sounds
+**Try the manager without a WVR:** https://radio32.github.io/RadioWVR/ (a demo: the sounds
 play in the browser and nothing leaves it).
 
 **Status: 0.1.0, the cue player. It compiles and the manager is tested against a pretend
@@ -20,7 +20,7 @@ device, but it has not yet run on a WVR.** See [First run](#first-run-on-hardwar
   at once and the eMMC catches up behind it. Sounds are ordinary WAV files on a FAT volume.
 - **Triggers:** OSC over WiFi (QLab), MIDI (the DIN input and the USB host backpack), pins to ground.
 - **Manager** at `http://192.168.4.1` (or `http://<name>.local`), in two panes like the
-  Performer Library Manager: your sound library on the computer on the left (a folder, its
+  Performer-Library-manager: your sound library on the computer on the left (a folder, its
   folders the categories), the WVR's slots and the selected slot's settings on the right. Drag or
   copy and paste between them; sounds are converted on the way to the WVR. Sliders are heard
   while they move, and every change to the WVR is saved on it as it is made. The library folder
@@ -32,7 +32,7 @@ whole device; loop points inside a sound.
 
 ## Using it
 
-1. Power the WVR and join its WiFi network, `WVR-xxxx`, password `12345678`.
+1. Power the WVR and join its WiFi network, `RadioWVR-xxxx`, password `12345678`.
 2. Open `http://192.168.4.1`.
 3. **Open folder…** in the Library pane and pick the folder with your sounds (or drop sounds on
    it). Drag sounds onto the WVR's slots. They are converted to 16-bit, 44.1 kHz in the browser.
@@ -80,7 +80,7 @@ Needs [arduino-cli](https://arduino.github.io/arduino-cli/) with the `esp32:esp3
 and Python 3. No other libraries.
 
 ```sh
-./build.sh                          # build/WvrRadio32.ino.bin
+./build.sh                          # build/RadioWVR.ino.bin
 ./build.sh /dev/cu.usbserial-XXXX   # and flash over an FTDI adapter
 ```
 
@@ -93,11 +93,11 @@ original firmware can install another one over WiFi:
 2. Send the new firmware (the address is `192.168.5.18` on original firmware older than 3.9.0):
 
    ```sh
-   curl --data-binary @build/WvrRadio32.ino.bin -H "content-type:text/plain" http://192.168.4.1/update
+   curl --data-binary @build/RadioWVR.ino.bin -H "content-type:text/plain" http://192.168.4.1/update
    ```
 
    The original manager does the same under **WVR → select firmware → force upload**.
-3. The WVR restarts as `WVR-xxxx`. Join that network and open `http://192.168.4.1`.
+3. The WVR restarts as `RadioWVR-xxxx`. Join that network and open `http://192.168.4.1`.
 
 This erases the unit's sounds. The original firmware stays in the other half of the flash: if
 the new one crashes three times in a row while starting, the WVR goes back to it by itself.
@@ -113,7 +113,7 @@ where no header is fitted.
 
 ### Later versions
 
-Install `build/WvrRadio32.ino.bin` from the manager: **Device… → Firmware**. The version that
+Install `build/RadioWVR.ino.bin` from the manager: **Device… → Firmware**. The version that
 was running stays as the fallback.
 
 ## First run on hardware
@@ -122,14 +122,14 @@ Watch the serial port at 115200 baud. Things this version assumes and has not ye
 
 - the eMMC mounts and formats (it falls back from 52 MHz to 20 MHz);
 - the DAC plays with left and right the right way round;
-- no clicks at `DMA_BLOCKS 2` in [config.h](firmware/WvrRadio32/config.h) (raise it to 3 if there are);
+- no clicks at `DMA_BLOCKS 2` in [config.h](firmware/RadioWVR/config.h) (raise it to 3 if there are);
 - the USB backpack sends ordinary MIDI bytes at 31250 baud on D2, as it did for the original firmware;
 - the manager's footer shows "waited for storage" only rarely, if ever.
 
 ## How it is put together
 
 ```
-firmware/WvrRadio32/
+firmware/RadioWVR/
   config.h       pins and sizes
   storage.*      the eMMC as FAT, WAV headers, safe saving
   engine.*       slots, voices, the mixer, the streamer
@@ -148,7 +148,7 @@ test/browser.sh  drives the page in headless Chrome against the pretend WVR
 
 On the eMMC: `project.json`, `device.json` and the sounds in `snd/`.
 
-The HTTP API is listed at the top of [net.cpp](firmware/WvrRadio32/net.cpp). There is no login:
+The HTTP API is listed at the top of [net.cpp](firmware/RadioWVR/net.cpp). There is no login:
 anyone on the device's network can change it, so give it a WiFi password of its own.
 
 ## License

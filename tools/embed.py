@@ -13,7 +13,7 @@ html = re.sub(r'<link rel="stylesheet" href="([^"?]+)(\?[^"]*)?">',
 html = re.sub(r'<script src="([^"?]+)(\?[^"]*)?"></script>',
               lambda m: "<script>\n" + (web / m.group(1)).read_text().replace("</script", "<\\/script") + "</script>", html)
 data = gzip.compress(html.encode(), 9, mtime=0)
-out = root / "firmware" / "WvrRadio32" / "web_bundle.h"
+out = root / "firmware" / "RadioWVR" / "web_bundle.h"
 rows = [", ".join(str(b) for b in data[i:i + 24]) for i in range(0, len(data), 24)]
 out.write_text("// Made by tools/embed.py from docs/. Don't edit.\n#pragma once\n#include <stdint.h>\n"
                f"#define WEB_BUNDLE_LEN {len(data)}\nstatic const uint8_t WEB_BUNDLE[] = {{\n" + ",\n".join(rows) + "\n};\n")
