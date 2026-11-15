@@ -31,6 +31,7 @@ struct Slot {
   uint16_t channels;
   int16_t* head;               // the first headFrames frames, as stereo
   uint32_t headFrames;
+  uint32_t edge;               // frames in EDGE_MS: the fade at the end, the cross-fade of a loop
   SlotParams p;
 };
 

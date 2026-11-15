@@ -28,6 +28,7 @@ struct Voice {
   uint32_t age;
   // reading
   uint32_t next;            // unrolled index of the next frame to pull
+  uint32_t pos;             // where that frame is in the slot's part of the file
   bool wrapped;             // `next` has passed 2^32 (a loop running for over a day)
   uint8_t ended;            // frames pulled past the end of a one-shot
   uint16_t starved;         // blocks in a row spent waiting for the eMMC
@@ -95,11 +96,11 @@ static void start_voice(int slot, uint8_t vel) {
   v.active = false;
   v.slot = slot;
   v.age = ++ageCounter;
-  v.next = 0; v.wrapped = false; v.ended = 0; v.starved = 0;
+  v.next = 0; v.pos = 0; v.wrapped = false; v.ended = 0; v.starved = 0;
   for (int i = 0; i < 4; i++) v.xl[i] = v.xr[i] = 0;
   v.frac = 3;                               // pull three frames: x[1] becomes the first one
   v.vel = s.p.velSens ? (vel / 127.0f) * (vel / 127.0f) : 1.0f;
-  uint16_t fin = s.p.fadeInMs;
+  uint16_t fin = s.p.fadeInMs < EDGE_MS ? EDGE_MS : s.p.fadeInMs;   // never a click at the start
   v.env = fin ? 0 : 1;
   v.envStep = fin ? 1.0f / (fin * 0.001f * SAMPLE_RATE) : 0;
   v.releasing = false;
@@ -110,15 +111,27 @@ static void start_voice(int slot, uint8_t vel) {
   xTaskNotifyGive(streamTask);
 }
 
+/*
+ * Where a loop goes back to. A loop long enough cross-fades its last `edge` frames into its
+ * first ones (which are always in RAM) and then carries on after them, so the join never
+ * clicks, wherever the start and end points are. The streamer wraps the same way.
+ */
+static inline bool crossfades(const Slot& s) { return s.frames > 2 * s.edge; }
+static inline uint32_t loop_start(const Slot& s) { return crossfades(s) ? s.edge : 0; }
+
 // Pulls the next frame into the voice's window. False: the eMMC hasn't delivered it yet.
 static inline bool pull(Voice& v, const Slot& s) {
   float l = 0, r = 0;
   bool loop = s.p.loop;
+  if (v.pos >= s.frames) {                              // the end of the part
+    if (!loop) {
+      v.ended++;
+      goto shift;
+    }
+    v.pos = loop_start(s);
+  }
   if (s.frames <= s.headFrames) {                       // the whole sound is in RAM
-    if (v.next >= s.frames) { if (loop) v.next = 0; else v.ended++; }
-    if (v.next < s.frames) { l = s.head[v.next * 2]; r = s.head[v.next * 2 + 1]; v.next++; }
-  } else if (!loop && !v.wrapped && v.next >= s.frames) {
-    v.ended++;
+    l = s.head[v.pos * 2]; r = s.head[v.pos * 2 + 1];
   } else {
     if (!v.wrapped && v.next < s.headFrames) {
       l = s.head[v.next * 2]; r = s.head[v.next * 2 + 1];
@@ -131,6 +144,21 @@ static inline bool pull(Voice& v, const Slot& s) {
     }
     if (++v.next == 0) v.wrapped = true;
   }
+  {
+    uint32_t left = s.frames - v.pos;                   // this frame and the ones after it
+    if (left <= s.edge) {
+      if (loop && crossfades(s)) {                      // blend into the start
+        uint32_t d = s.edge - left;
+        float w = (float)(d + 1) / (s.edge + 1);
+        l += (s.head[d * 2] - l) * w; r += (s.head[d * 2 + 1] - r) * w;
+      } else if (!loop) {                               // fade to silence at the end
+        float g = (float)(left - 1) / s.edge;
+        l *= g; r *= g;
+      }
+    }
+  }
+  v.pos++;
+shift:
   v.xl[0] = v.xl[1]; v.xl[1] = v.xl[2]; v.xl[2] = v.xl[3]; v.xl[3] = l;
   v.xr[0] = v.xr[1]; v.xr[1] = v.xr[2]; v.xr[2] = v.xr[3]; v.xr[3] = r;
   return true;
@@ -153,11 +181,12 @@ static void render(Voice& v, float* outL, float* outR) {
   float env = v.env + v.envStep * BLOCK_FRAMES;
   if (env >= 1) { env = 1; if (!v.releasing) v.envStep = 0; }
   if (env < 0) env = 0;
-  float g = powf(10.0f, s.p.gainDb / 20.0f) * v.vel * env;
+  float base = powf(10.0f, s.p.gainDb / 20.0f) * v.vel;
   float pan = s.p.pan;
-  float tl = g * (pan > 0 ? cosf(pan * 1.5707963f) : 1.0f);
-  float tr = g * (pan < 0 ? cosf(-pan * 1.5707963f) : 1.0f);
-  if (v.snap) { v.gl = tl; v.gr = tr; v.snap = false; }
+  float pl = pan > 0 ? cosf(pan * 1.5707963f) : 1.0f, pr = pan < 0 ? cosf(-pan * 1.5707963f) : 1.0f;
+  float tl = base * env * pl, tr = base * env * pr;
+  // a new voice starts from its fade-in's first level, not from where this block ends
+  if (v.snap) { v.gl = base * v.env * pl; v.gr = base * v.env * pr; v.snap = false; }
   float dl = (tl - v.gl) / BLOCK_FRAMES, dr = (tr - v.gr) / BLOCK_FRAMES;
   float gl = v.gl, gr = v.gr;
 
@@ -274,7 +303,7 @@ static bool feed(Voice& v) {
     v.eof = false;
     v.streamGen.store(g);
   }
-  if (v.eof) { if (!s.p.loop) return false; v.eof = false; v.fileFrame = 0; }
+  if (v.eof) { if (!s.p.loop) return false; v.eof = false; v.fileFrame = loop_start(s); }
   uint32_t space = RING_FRAMES - (v.w.load() - v.rd.load());
   if (space > RING_FRAMES || space < RING_FRAMES / 4) return false;
   uint32_t n = s.frames - v.fileFrame;
@@ -285,7 +314,7 @@ static bool feed(Voice& v) {
   v.fileFrame += got;
   v.w.fetch_add(got);
   if (got < n || v.fileFrame >= s.frames) {
-    if (s.p.loop && got) v.fileFrame = 0; else v.eof = true;
+    if (s.p.loop && got) v.fileFrame = loop_start(s); else v.eof = true;
   }
   return got > 0;
 }
@@ -377,6 +406,7 @@ bool engine_load_slot(int i, const char* file, float startSec, float endSec) {
       if (a >= b) { a = 0; b = w.frames; }
       s.dataOff = w.dataOff; s.startFrame = a; s.frames = b - a; s.rate = w.rate; s.channels = w.channels;
       s.headFrames = s.frames < HEAD_FRAMES ? s.frames : HEAD_FRAMES;
+      s.edge = w.rate * EDGE_MS / 1000; if (s.edge < 1) s.edge = 1;
       s.head = (int16_t*)heap_caps_malloc(s.headFrames * 4, MALLOC_CAP_SPIRAM);
       if (s.fd < 0) { ok = false; err = "can't open file"; }
       else if (!s.head) { ok = false; err = "out of memory"; }

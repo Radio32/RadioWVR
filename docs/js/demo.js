@@ -140,14 +140,21 @@ var WVRDemo = (function () {
     v.src = ctx.createBufferSource(); v.src.buffer = buf; v.src.loop = !!s.loop; v.src.playbackRate.value = Math.pow(2, (s.pitch || 0) / 12);
     v.gain = ctx.createGain(); v.pan = ctx.createStereoPanner(); v.pan.pan.value = s.pan || 0;
     var t = ctx.currentTime, g = level(s, v);
-    if (s.fadeIn) { v.gain.gain.setValueAtTime(0, t); v.gain.gain.linearRampToValueAtTime(g, t + s.fadeIn / 1000); } else v.gain.gain.value = g;
-    v.src.connect(v.gain); v.gain.connect(v.pan); v.pan.connect(master);
+    // as on the device: at least 2 ms of fade in, and 2 ms of fade at the end of a one-shot
+    v.gain.gain.setValueAtTime(0, t); v.gain.gain.linearRampToValueAtTime(g, t + Math.max(2, s.fadeIn || 0) / 1000);
+    v.edge = ctx.createGain();
+    v.src.connect(v.edge); v.edge.connect(v.gain); v.gain.connect(v.pan); v.pan.connect(master);
     v.src.onended = function () { voices = voices.filter(function (x) { return x !== v; }); };
     // only the part between the start and end points plays and loops, as on the device
     var a = Math.max(0, s.start || 0), b = s.end > 0 ? Math.min(s.end, buf.duration) : buf.duration;
     if (!(a < b)) { a = 0; b = buf.duration; }
     v.src.loopStart = a; v.src.loopEnd = b;
-    if (s.loop) v.src.start(t, a); else v.src.start(t, a, b - a);
+    if (s.loop) v.src.start(t, a);
+    else {
+      v.src.start(t, a, b - a);
+      var end = t + (b - a) / v.src.playbackRate.value;
+      v.edge.gain.setValueAtTime(1, Math.max(t, end - 0.002)); v.edge.gain.linearRampToValueAtTime(0, end);
+    }
     voices.push(v);
     while (voices.length > 8) { var old = voices.shift(); try { old.src.stop(); } catch (e) {} }   // the WVR plays 8 at once
   }
