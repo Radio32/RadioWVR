@@ -2,7 +2,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.1.2"
+#define FW_VERSION "0.1.3"
 
 // ---- audio
 #define SAMPLE_RATE   44100
