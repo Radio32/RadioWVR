@@ -13,6 +13,9 @@
 #define HEAD_FRAMES   4096    // start of every sound kept in RAM (93 ms): a trigger never waits for the eMMC
 #define RING_FRAMES   8192    // per-voice stream buffer, a power of two (186 ms)
 #define EDGE_MS       2       // shortest fade in, fade at the end of a sound, cross-fade where a loop joins
+
+// ---- WiFi
+#define WIFI_TX_POWER WIFI_POWER_11dBm   // a room or a stage; full power resets the WVR as WiFi starts
 #define READ_BYTES    8192    // eMMC read size, a multiple of 512
 
 // ---- pins (ESP32 GPIO numbers)

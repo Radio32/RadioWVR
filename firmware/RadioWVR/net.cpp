@@ -317,6 +317,9 @@ void net_begin() {
   });
   WiFi.setHostname(host.c_str());
   WiFi.mode(sta ? WIFI_AP_STA : WIFI_AP);
+  // Full power (19.5 dBm) dips the WVR's 3.3 V supply enough to reset it as WiFi starts:
+  // lower it before the first transmission.
+  WiFi.setTxPower(WIFI_TX_POWER);
   WiFi.softAP(g_device.name, g_device.apPass);
   if (sta) WiFi.begin(g_device.staSsid, g_device.staPass);
   WiFi.setSleep(false);                       // no power saving: it delays incoming triggers
