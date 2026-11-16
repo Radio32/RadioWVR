@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" data-web-only>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-web-only>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" data-web-only>
-<link rel="stylesheet" href="style.css?v=20261116a">
+<link rel="stylesheet" href="style.css?v=20261116b">
 </head>
 <body>
 <div class="wrap">
@@ -19,7 +19,8 @@
   </header>
 
   <div class="libnote" id="demoNote" hidden>
-    <p><b>This is the demo.</b> No WVR is connected: the right-hand pane is a pretend one, and its sounds play on this computer. They are kept in this browser only. On a WVR the same page is at <code>http://192.168.4.1</code>.</p>
+    <p><b>This is the demo, not a WVR.</b> The WVR pane on the right is a pretend one: its sounds play on this computer and are kept in this browser only. This page can't reach a real WVR.</p>
+    <p><b>To work on a WVR:</b> join its WiFi network (<code>RadioWVR-…</code>, password <code>12345678</code>), then open its own page at <a href="http://192.168.4.1/">http://192.168.4.1</a>. It is this same manager, served by the WVR.</p>
   </div>
   <div class="banner" id="banner" hidden></div>
 
@@ -136,10 +137,10 @@
 <input type="file" id="pickFolder" webkitdirectory multiple hidden>
 <datalist id="catList"></datalist>
 
-<script src="js/audio.js?v=20261116a"></script>
-<script src="js/model.js?v=20261116a"></script>
-<script src="js/zip.js?v=20261116a"></script>
-<script src="js/demo.js?v=20261116a" data-web-only></script>
-<script src="js/app.js?v=20261116a"></script>
+<script src="js/audio.js?v=20261116b"></script>
+<script src="js/model.js?v=20261116b"></script>
+<script src="js/zip.js?v=20261116b"></script>
+<script src="js/demo.js?v=20261116b" data-web-only></script>
+<script src="js/app.js?v=20261116b"></script>
 </body>
 </html>
