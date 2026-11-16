@@ -23,7 +23,8 @@
 // The slot may also be part of the address: /wvr/play/3. Slots count from 1.
 
 static void osc_message(const uint8_t* b, int n) {
-  if (n < 8 || b[0] != '/' || b[n - 1] != 0) return;   // (bundles start with '#': not handled)
+  // the address must end inside the packet; arguments (an int's last byte) need not end in 0
+  if (n < 8 || b[0] != '/' || !memchr(b, 0, n)) return;   // (bundles start with '#': not handled)
   const char* addr = (const char*)b;
   int pos = (strlen(addr) + 4) & ~3;
   float arg[3]; int argc = 0;
