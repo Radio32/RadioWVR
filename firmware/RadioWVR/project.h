@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include "config.h"
 
+enum { MODE_PLAYER = 0, MODE_SYNTH = 1 };
+
 struct DeviceCfg {
   char name[24];        // WiFi network name and http://<name>.local
   char apPass[40];      // at least 8 characters
@@ -11,6 +13,7 @@ struct DeviceCfg {
   char staPass[64];
   int oscPort;
   uint8_t midiChannel;  // 0 = all
+  uint8_t mode;         // MODE_PLAYER or MODE_SYNTH, chosen at start-up
 };
 extern DeviceCfg g_device;
 extern volatile int8_t g_pinSlot[14];   // D-pin -> slot (0-based), -1 = unused

@@ -2,7 +2,7 @@
 #pragma once
 #include <stdint.h>
 
-#define FW_VERSION "0.1.3"
+#define FW_VERSION "0.2.0"
 
 // ---- audio
 #define SAMPLE_RATE   44100
@@ -12,9 +12,11 @@
 #define NUM_SLOTS     16      // sounds in a project
 #define HEAD_FRAMES   4096    // start of every sound kept in RAM (93 ms): a trigger never waits for the eMMC
 #define RING_FRAMES   8192    // per-voice stream buffer, a power of two (186 ms)
+#define SYNTH_SAMPLE_MAX 1000000   // frames of a sample used as an oscillator (22 s, 2 MB of PSRAM)
 #define EDGE_MS       2       // shortest fade in, fade at the end of a sound, cross-fade where a loop joins
 
 // ---- WiFi
+#define AP_IP         192, 168, 5, 18    // the WVR's own network: the address printed on the board
 #define WIFI_TX_POWER WIFI_POWER_11dBm   // a room or a stage; full power resets the WVR as WiFi starts
 #define READ_BYTES    8192    // eMMC read size, a multiple of 512
 
@@ -34,4 +36,5 @@ static inline bool wvr_has_pullup(int d) { return !(d >= 7 && d <= 10); }
 #define SND_DIR       MOUNT "/snd"
 #define PROJECT_FILE  MOUNT "/project.json"
 #define DEVICE_FILE   MOUNT "/device.json"
+#define SYNTH_FILE    MOUNT "/synth.json"
 #define FILE_NAME_MAX 48

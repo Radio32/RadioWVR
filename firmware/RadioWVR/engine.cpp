@@ -4,7 +4,7 @@
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <driver/i2s_std.h>
+#include "audio_out.h"
 #include <esp_heap_caps.h>
 
 Slot g_slots[NUM_SLOTS];
@@ -340,16 +340,19 @@ static void stream_task(void*) {
 // ------------------------------------------------------------------ public
 
 void engine_play(int slot, uint8_t vel) {
+  if (!cmdQ) return;
   if (slot < 0 || slot >= NUM_SLOTS) return;
   Cmd c = { CMD_PLAY, (int8_t)slot, vel };
   xQueueSend(cmdQ, &c, 0);
 }
 void engine_release(int slot) {
+  if (!cmdQ) return;
   if (slot < 0 || slot >= NUM_SLOTS) return;
   Cmd c = { CMD_RELEASE, (int8_t)slot, 0 };
   xQueueSend(cmdQ, &c, 0);
 }
 void engine_stop(int slot) {
+  if (!cmdQ) return;
   if (slot >= NUM_SLOTS) return;
   Cmd c = { CMD_STOP, (int8_t)(slot < 0 ? -1 : slot), 0 };
   xQueueSend(cmdQ, &c, 0);
@@ -434,21 +437,7 @@ void engine_begin() {
     if (!v.ring) log_e("no memory for a voice");
   }
 
-  i2s_chan_config_t cc = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-  cc.dma_desc_num = DMA_BLOCKS;
-  cc.dma_frame_num = BLOCK_FRAMES;
-  cc.auto_clear = true;
-  ESP_ERROR_CHECK(i2s_new_channel(&cc, &tx, nullptr));
-  i2s_std_config_t sc = {};
-  sc.clk_cfg = (i2s_std_clk_config_t)I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE);
-  sc.slot_cfg = (i2s_std_slot_config_t)I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO);
-  sc.gpio_cfg.mclk = I2S_GPIO_UNUSED;
-  sc.gpio_cfg.bclk = (gpio_num_t)PIN_I2S_BCLK;
-  sc.gpio_cfg.ws = (gpio_num_t)PIN_I2S_WS;
-  sc.gpio_cfg.dout = (gpio_num_t)PIN_I2S_DOUT;
-  sc.gpio_cfg.din = I2S_GPIO_UNUSED;
-  ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx, &sc));
-  ESP_ERROR_CHECK(i2s_channel_enable(tx));
+  tx = audio_out_begin(BLOCK_FRAMES, DMA_BLOCKS);
 
   // Both on core 1, away from WiFi; the mixer always pre-empts the streamer.
   xTaskCreatePinnedToCore(stream_task, "stream", 4096, nullptr, 12, &streamTask, 1);

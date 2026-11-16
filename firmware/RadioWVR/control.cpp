@@ -2,6 +2,7 @@
 #include "config.h"
 #include "engine.h"
 #include "project.h"
+#include "synth.h"
 #include <driver/uart.h>
 #include <lwip/sockets.h>
 #include <math.h>
@@ -15,6 +16,10 @@
 //   /wvr/pan   <slot> <-1..1>
 //   /wvr/pitch <slot> <semitones>
 //   /wvr/master <dB>
+// In synth mode:
+//   /wvr/note <note> [velocity]     velocity 0 (or /wvr/off <note>) lets go
+//   /wvr/off <note>
+//   /wvr/set <key> <value>          any synth parameter, e.g. /wvr/set fc 800 (a string key)
 // The slot may also be part of the address: /wvr/play/3. Slots count from 1.
 
 static void osc_message(const uint8_t* b, int n) {
@@ -41,6 +46,24 @@ static void osc_message(const uint8_t* b, int n) {
     }
   }
   if (strncmp(addr, "/wvr/", 5)) return;
+  if (synth_running()) {
+    if (!strncmp(addr, "/wvr/set", 8)) {             // the key is a string: read it again
+      int p2 = (strlen(addr) + 4) & ~3;
+      if (p2 < n && b[p2] == ',' && b[p2 + 1] == 's') {
+        int a = p2 + ((strlen((const char*)b + p2) + 4) & ~3);
+        const char* key = (const char*)b + a;
+        if (argc >= 2) synth_set(key, arg[1]);
+      }
+      return;
+    }
+    if (!strcmp(addr, "/wvr/note") && argc >= 1) {
+      float v = argc >= 2 ? arg[1] : 100;
+      if (argc >= 2 && v > 0 && v <= 1.0f) v *= 127;
+      synth_note((int)arg[0], (int)v);
+    } else if (!strcmp(addr, "/wvr/off") && argc >= 1) synth_note((int)arg[0], 0);
+    else if (!strcmp(addr, "/wvr/stopall") || !strcmp(addr, "/wvr/stop")) synth_all_off();
+    return;
+  }
   char cmd[12];
   const char* rest = addr + 5;
   const char* slash = strchr(rest, '/');
@@ -83,6 +106,7 @@ struct MidiIn { uint8_t status, data[2], need, have; };
 static void midi_message(uint8_t status, uint8_t d1, uint8_t d2) {
   uint8_t ch = (status & 0x0F) + 1, kind = status & 0xF0;
   if (g_device.midiChannel && ch != g_device.midiChannel) return;
+  if (synth_running()) { synth_midi(kind, d1, d2); return; }
   if (kind == 0x90 && d2 > 0) {
     for (int i = 0; i < NUM_SLOTS; i++) if (g_slots[i].p.note == d1) engine_play(i, d2);
   } else if (kind == 0x80 || kind == 0x90) {
@@ -161,6 +185,6 @@ static void pins_task(void*) {
 void control_begin() {
   midi_open(UART_NUM_2, PIN_MIDI_RX, false);      // DIN MIDI in
   midi_open(UART_NUM_1, WVR_D[2], true);          // USB host backpack, on D2
-  xTaskCreatePinnedToCore(pins_task, "pins", 3072, nullptr, 5, nullptr, 0);
+  if (!synth_running()) xTaskCreatePinnedToCore(pins_task, "pins", 3072, nullptr, 5, nullptr, 0);
   xTaskCreatePinnedToCore(osc_task, "osc", 4096, nullptr, 15, nullptr, 0);
 }

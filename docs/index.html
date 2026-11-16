@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" data-web-only>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin data-web-only>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" data-web-only>
-<link rel="stylesheet" href="style.css?v=20261116c">
+<link rel="stylesheet" href="style.css?v=20261116e">
 </head>
 <body>
 <div class="wrap">
@@ -20,7 +20,7 @@
 
   <div class="libnote" id="demoNote" hidden>
     <p><b>This is the demo, not a WVR.</b> The WVR pane on the right is a pretend one: its sounds play on this computer and are kept in this browser only. This page can't reach a real WVR.</p>
-    <p><b>To work on a WVR:</b> join its WiFi network (<code>RadioWVR-…</code>, password <code>12345678</code>), then open its own page at <a href="http://192.168.4.1/">http://192.168.4.1</a>. It is this same manager, served by the WVR.</p>
+    <p><b>To work on a WVR:</b> join its WiFi network (<code>RadioWVR-…</code>, password <code>12345678</code>), then open its own page at <a href="http://192.168.5.18/">http://192.168.5.18</a> (it is printed on the board). It is this same manager, served by the WVR.</p>
   </div>
   <div class="banner" id="banner" hidden></div>
 
@@ -58,7 +58,7 @@
 
     <section class="lpane" id="paneWvr" data-pane="wvr" aria-label="WVR">
       <div class="lpane-head">
-        <div class="lpane-title"><h2>WVR</h2><input type="text" class="lpane-proj" id="projName" maxlength="40" aria-label="Project name" placeholder="Project name"></div>
+        <div class="lpane-title"><h2 id="wvrTitle">WVR</h2><input type="text" class="lpane-proj player-only" id="projName" maxlength="40" aria-label="Project name" placeholder="Project name"></div>
         <div class="btnrow">
           <button class="btn small" data-act="undo" title="Undo (⌘Z)" aria-label="Undo">↶</button>
           <button class="btn small" data-act="redo" title="Redo (⇧⌘Z)" aria-label="Redo">↷</button>
@@ -67,11 +67,11 @@
       </div>
       <div class="wbar">
         <div class="meters" title="Output level"><div class="meter"><i id="mL"></i></div><div class="meter"><i id="mR"></i></div></div>
-        <label class="master">Master <input id="master" type="range" min="-60" max="6" step="0.5"> <output id="masterOut"></output></label>
+        <label class="master player-only">Master <input id="master" type="range" min="-60" max="6" step="0.5"> <output id="masterOut"></output></label>
         <button class="btn danger" id="stopAll" title="Stop every sound (Esc)">Stop all</button>
         <span class="save" id="saveState"></span>
       </div>
-      <div class="btnrow ltools">
+      <div class="btnrow ltools player-only">
         <button class="btn" data-act="play" title="Play on the WVR (Space)">▶ Play</button>
         <button class="btn" data-act="copy" title="⌘C">Copy</button>
         <button class="btn" data-act="cut" title="⌘X">Cut</button>
@@ -83,14 +83,30 @@
         <button class="btn" data-act="add">Add sounds…</button>
         <button class="btn primary send" data-act="send" title="Copy the sounds into the library">← To library</button>
       </div>
-      <div class="lfilter opts">
+      <div class="lfilter opts player-only">
         <span class="help">Sounds going to the WVR:</span>
         <label><input type="checkbox" id="optTrim"> Trim silence</label>
         <label><input type="checkbox" id="optNorm"> Normalise</label>
       </div>
-      <div class="wbody">
+      <div class="wbody player-only">
         <ul class="llist" id="wvrList" tabindex="0" aria-label="The WVR's slots"></ul>
         <div class="slotedit" id="slotEdit" aria-label="The selected slot"></div>
+      </div>
+      <div class="synthpane" id="synthPane" hidden>
+        <div class="btnrow stools">
+          <input type="text" id="patchName" maxlength="40" aria-label="Patch name" placeholder="Patch name">
+          <select id="presetSel" aria-label="Presets"></select>
+          <button class="btn" id="learnBtn" type="button" title="Map knobs on your MIDI controller to the synth">MIDI learn</button>
+          <button class="btn small" id="patchOpen" type="button" title="Open a patch file">Open…</button>
+          <button class="btn small" id="patchDownload" type="button" title="Save this patch as a file">Download</button>
+        </div>
+        <p class="help" id="learnHelp" hidden>Click <b>learn</b> on a control, then move a knob on your MIDI controller. One knob per control; × forgets it. Mod wheel (CC 1) adds vibrato, CC 64 is the sustain pedal.</p>
+        <div class="kbwrap">
+          <button class="btn small" id="octDown" type="button" title="An octave down (Z)" aria-label="Octave down">−</button>
+          <div class="keys" id="synthKeys" aria-label="Keyboard: play the synth"></div>
+          <button class="btn small" id="octUp" type="button" title="An octave up (X)" aria-label="Octave up">+</button>
+        </div>
+        <div class="scards" id="synthCards"></div>
       </div>
       <p class="lstatus" id="wvrStatus" role="status" aria-live="polite"></p>
     </section>
@@ -124,8 +140,10 @@
       <label>Its password <input type="text" id="dSpass" maxlength="63"></label>
       <label>OSC port <input type="number" id="dOsc" min="1024" max="65535"></label>
       <label>MIDI channel <select id="dMidi"></select></label>
+      <label>Mode <select id="dMode"><option value="player">Theatre player</option><option value="synth">Synth</option></select></label>
     </div>
     <p class="help">The name is the WiFi network and the address <code>http://name.local</code>. Changes here take effect after a restart.</p>
+    <p class="help"><b>Mode:</b> the theatre player and the synth never run together. In a show, the player runs alone, exactly as before; the synth keeps its patch for next time.</p>
     <div class="row"><button class="btn primary" id="dSave" type="button">Save and restart</button><span class="help" id="dMsg"></span></div>
     <h3>Firmware</h3>
     <div class="row"><input type="file" id="fwFile" accept=".bin"><button class="btn" id="fwGo" type="button">Install</button></div>
@@ -135,12 +153,17 @@
 </dialog>
 <input type="file" id="pickFiles" multiple hidden accept="audio/*,.wav,.aif,.aiff,.aifc,.mp3,.flac,.ogg,.m4a">
 <input type="file" id="pickFolder" webkitdirectory multiple hidden>
+<input type="file" id="synthFile" hidden accept="audio/*,.wav,.aif,.aiff,.aifc,.mp3,.flac,.ogg,.m4a">
+<input type="file" id="patchFile" hidden accept=".json,application/json">
 <datalist id="catList"></datalist>
 
-<script src="js/audio.js?v=20261116c"></script>
-<script src="js/model.js?v=20261116c"></script>
-<script src="js/zip.js?v=20261116c"></script>
-<script src="js/demo.js?v=20261116c" data-web-only></script>
-<script src="js/app.js?v=20261116c"></script>
+<script src="js/audio.js?v=20261116e"></script>
+<script src="js/model.js?v=20261116e"></script>
+<script src="js/zip.js?v=20261116e"></script>
+<script src="js/synth-params.js?v=20261116e"></script>
+<script src="js/synth-ui.js?v=20261116e"></script>
+<script src="js/demo-synth.js?v=20261116e" data-web-only></script>
+<script src="js/demo.js?v=20261116e" data-web-only></script>
+<script src="js/app.js?v=20261116e"></script>
 </body>
 </html>

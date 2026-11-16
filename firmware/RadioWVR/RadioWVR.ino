@@ -1,10 +1,11 @@
-// RadioWVR: a cue player for the WVR board. See README.md.
+// RadioWVR: a cue player for the WVR board, or a synth. See README.md.
 #include "config.h"
 #include "storage.h"
 #include "engine.h"
 #include "project.h"
 #include "net.h"
 #include "control.h"
+#include "synth.h"
 #include <esp_ota_ops.h>
 #include <esp_system.h>
 
@@ -40,11 +41,18 @@ void setup() {
   crash_guard();
   if (!storage_begin()) Serial.println("The eMMC could not be mounted: no sounds, settings are not kept.");
   device_load();
-  engine_begin();
-  project_begin();
+  // Theatre mode (the player) and synth mode never run together: the one not chosen isn't
+  // started at all, so it can't take memory or time from the other.
+  if (g_device.mode == MODE_SYNTH) {
+    Serial.println("Synth mode");
+    if (!synth_begin()) Serial.println("The synth could not start.");
+  } else {
+    engine_begin();
+    project_begin();
+  }
   net_begin();
   control_begin();
-  Serial.printf("WiFi \"%s\"  http://192.168.4.1  http://%s.local  OSC port %d\n", g_device.name, g_device.name, g_device.oscPort);
+  Serial.printf("WiFi \"%s\"  http://192.168.5.18  http://%s.local  OSC port %d\n", g_device.name, g_device.name, g_device.oscPort);
 }
 
 void loop() {

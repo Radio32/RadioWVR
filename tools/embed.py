@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Packs the manager (docs/) into one gzipped page inside the firmware: web_bundle.h."""
-import gzip, pathlib, re
+import gzip, json, pathlib, re
 
 root = pathlib.Path(__file__).resolve().parent.parent
 web = root / "docs"
@@ -18,3 +18,19 @@ rows = [", ".join(str(b) for b in data[i:i + 24]) for i in range(0, len(data), 2
 out.write_text("// Made by tools/embed.py from docs/. Don't edit.\n#pragma once\n#include <stdint.h>\n"
                f"#define WEB_BUNDLE_LEN {len(data)}\nstatic const uint8_t WEB_BUNDLE[] = {{\n" + ",\n".join(rows) + "\n};\n")
 print(f"web_bundle.h: {len(html)} bytes of page, {len(data)} gzipped")
+
+# The synth's parameter table, from the one list in docs/js/synth-params.js.
+src = (web / "js" / "synth-params.js").read_text()
+params = json.loads(src[src.index("/*BEGIN*/") + 9:src.index("/*END*/")])
+curves = {"lin": 0, "log": 1, "sq": 2, "int": 3, "list": 4}
+rows = []
+for p in params:
+    rows.append(f'  {{ "{p["k"]}", {float(p["min"])}f, {float(p["max"])}f, {float(p["def"])}f, {curves[p["c"]]} }},')
+enum = "\n".join(f"  SP_{p['k'].upper()}," for p in params)
+(root / "firmware" / "RadioWVR" / "synth_params.h").write_text(
+    "// Made by tools/embed.py from docs/js/synth-params.js. Don't edit.\n#pragma once\n#include <stdint.h>\n\n"
+    "enum SynthCurve { SC_LIN, SC_LOG, SC_SQ, SC_INT, SC_LIST };\n"
+    "struct SynthParamDef { const char* key; float min, max, def; uint8_t curve; };\n\n"
+    f"enum SynthParam {{\n{enum}\n  SP_COUNT\n}};\n\n"
+    "static const SynthParamDef SYNTH_PARAMS[SP_COUNT] = {\n" + "\n".join(rows) + "\n};\n")
+print(f"synth_params.h: {len(params)} parameters")

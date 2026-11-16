@@ -31,6 +31,7 @@ static void device_defaults() {
   g_device.staSsid[0] = g_device.staPass[0] = 0;
   g_device.oscPort = 8000;
   g_device.midiChannel = 0;
+  g_device.mode = MODE_PLAYER;
 }
 
 static bool device_parse(const char* json, char* err, size_t errn) {
@@ -51,6 +52,7 @@ static bool device_parse(const char* json, char* err, size_t errn) {
     strlcpy(g_device.staPass, str(o, "staPass", g_device.staPass), sizeof g_device.staPass);
     g_device.oscPort = (int)clampf(num(o, "oscPort", g_device.oscPort), 1024, 65535);
     g_device.midiChannel = (uint8_t)clampf(num(o, "midiChannel", g_device.midiChannel), 0, 16);
+    g_device.mode = !strcmp(str(o, "mode", g_device.mode == MODE_SYNTH ? "synth" : "player"), "synth") ? MODE_SYNTH : MODE_PLAYER;
   }
   cJSON_Delete(o);
   return ok;
@@ -64,6 +66,7 @@ char* device_json() {
   cJSON_AddStringToObject(o, "staPass", g_device.staPass);
   cJSON_AddNumberToObject(o, "oscPort", g_device.oscPort);
   cJSON_AddNumberToObject(o, "midiChannel", g_device.midiChannel);
+  cJSON_AddStringToObject(o, "mode", g_device.mode == MODE_SYNTH ? "synth" : "player");
   char* s = cJSON_PrintUnformatted(o);
   cJSON_Delete(o);
   return s;
@@ -148,7 +151,10 @@ static bool apply(const char* json, bool save, char* err, size_t errn) {
   return ok;
 }
 
-bool project_apply(const char* json, char* err, size_t errn) { return apply(json, true, err, errn); }
+bool project_apply(const char* json, char* err, size_t errn) {
+  if (!mux) { snprintf(err, errn, "the WVR is in synth mode"); return false; }
+  return apply(json, true, err, errn);
+}
 
 void project_begin() {
   mux = xSemaphoreCreateMutex();
@@ -161,6 +167,7 @@ void project_begin() {
 }
 
 char* project_json() {
+  if (!mux) return strdup("{}");
   xSemaphoreTake(mux, portMAX_DELAY);
   char* s = strdup(text ? text : "{}");
   xSemaphoreGive(mux);

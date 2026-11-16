@@ -9,7 +9,47 @@
 var WVRDemo = (function () {
   var SLOTS = 16;
   var project = { name: "Demo project", master: 0, slots: [], pins: [] }, rev = 1, files = {};
-  var device = { name: "RadioWVR-DEMO", apPass: "12345678", staSsid: "", staPass: "", oscPort: 8000, midiChannel: 0 };
+  var device = { name: "RadioWVR-DEMO", apPass: "12345678", staSsid: "", staPass: "", oscPort: 8000, midiChannel: 0, mode: "player" };
+  try { var keptDevice = JSON.parse(localStorage.getItem("wvr-demo-device") || "null"); if (keptDevice && keptDevice.mode) device.mode = keptDevice.mode; } catch (e) {}
+
+  // ---------------------------------------------------------------- synth mode (as the firmware's synth.cpp)
+
+  var synthPatch = null, synthRev = 0, learning = "";
+  function synthDefaults() { return { name: "Init", p: SynthParam.defaults(), files: ["", ""], map: {} }; }
+  try { synthPatch = JSON.parse(localStorage.getItem("wvr-demo-synth") || "null"); } catch (e) {}
+  if (!synthPatch || !synthPatch.p) synthPatch = synthDefaults();
+  function keepSynth() { try { localStorage.setItem("wvr-demo-synth", JSON.stringify(synthPatch)); } catch (e) {} }
+  function synthSamples() { synthPatch.files.forEach(function (f, k) { DemoSynth.setSample(k, f && files[f] ? files[f] : null); }); }
+  function synthChanged() { synthRev++; keepSynth(); DemoSynth.setParams(synthPatch.p); }
+  // a MIDI controller on this computer plays the demo's synth, and can be learned (Chrome and Edge)
+  var midiAsked = false;
+  function midiIn() {
+    if (midiAsked || !navigator.requestMIDIAccess) return;
+    midiAsked = true;
+    navigator.requestMIDIAccess().then(function (m) {
+      var listen = function () { m.inputs.forEach(function (i) { i.onmidimessage = midiMessage; }); };
+      listen(); m.onstatechange = listen;
+    }).catch(function () {});
+  }
+  function midiMessage(e) {
+    if (device.mode !== "synth") return;
+    var d = e.data, kind = d[0] & 0xF0;
+    if (kind === 0x90 && d[2]) DemoSynth.noteOn(d[1], d[2]);
+    else if (kind === 0x80 || kind === 0x90) DemoSynth.noteOff(d[1]);
+    else if (kind === 0xE0) DemoSynth.setBend((((d[2] << 7) | d[1]) - 8192) / 8192);
+    else if (kind === 0xB0) {
+      var cc = d[1], v = d[2];
+      if (learning && cc !== 64 && cc !== 120 && cc !== 123) {
+        for (var c in synthPatch.map) if (synthPatch.map[c] === learning) delete synthPatch.map[c];
+        synthPatch.map[cc] = learning; learning = ""; synthChanged();
+      }
+      var k = synthPatch.map[cc];
+      if (k) { synthPatch.p[k] = SynthParam.fromUnit(SynthParam.byKey[k], v / 127); synthChanged(); }
+      else if (cc === 1) DemoSynth.setModwheel(v / 127);
+      else if (cc === 64) DemoSynth.setSustain(v >= 64);
+      else if (cc === 120 || cc === 123) DemoSynth.allOff();
+    }
+  }
   var db = null, ready = null;
 
   // ---------------------------------------------------------------- keeping things (this browser only)
@@ -180,15 +220,40 @@ var WVRDemo = (function () {
     var u = new URL(path, "http://wvr"), q = u.searchParams, p = u.pathname, name = q.get("name"), slot = Number(q.get("slot") || 0);
     if (p === "/api/state") {
       var used = 0; Object.keys(files).forEach(function (k) { used += files[k].length; });
-      return { fw: "demo", slots: SLOTS, voices: 8, storage: true, space: { total: 7.8e9, free: 7.8e9 - used }, ip: { ap: "192.168.4.1", sta: "" }, device: device,
+      var synthOn = device.mode === "synth";
+      if (synthOn) { DemoSynth.setParams(synthPatch.p); synthSamples(); midiIn(); }
+      return { mode: synthOn ? "synth" : "player", synth: synthOn ? JSON.parse(JSON.stringify(synthPatch)) : undefined, fw: "demo", slots: SLOTS, voices: 8, storage: true, space: { total: 7.8e9, free: 7.8e9 - used }, ip: { ap: "192.168.5.18", sta: "" }, device: device,
                files: Object.keys(files).map(function (k) { return { name: k, size: files[k].length }; }), rev: rev, project: JSON.parse(JSON.stringify(project)) };
     }
     if (p === "/api/status") {
       var on = {}; voices.forEach(function (v) { on[v.slot] = true; });
-      return { rev: rev, playing: Object.keys(on).map(Number).sort(function (a, b) { return a - b; }), peak: [peak(anL), peak(anR)], voices: voices.length, under: 0, master: project.master, heap: 0, errors: {} };
+      var st = { rev: rev, playing: Object.keys(on).map(Number).sort(function (a, b) { return a - b; }), peak: [peak(anL), peak(anR)], voices: voices.length, under: 0, master: project.master, heap: 0, errors: {} };
+      if (device.mode === "synth") st.synth = { rev: synthRev, load: 0.04 + 0.08 * DemoSynth.voices(), voices: DemoSynth.voices(), peak: DemoSynth.peaks(), learn: learning };
+      return st;
     }
     if (p === "/api/project") { project = JSON.parse(body); rev++; keepProject(); refresh(); return { ok: true, rev: rev }; }
-    if (p === "/api/device") { var d = JSON.parse(body); for (var k in d) device[k] = d[k]; return { ok: true }; }
+    if (p === "/api/device") {
+      var d = JSON.parse(body); for (var k in d) device[k] = d[k];
+      try { localStorage.setItem("wvr-demo-device", JSON.stringify({ mode: device.mode })); } catch (e) {}
+      return { ok: true };
+    }
+    if (p === "/api/restart") { stop(0); DemoSynth.allOff(); return { ok: true }; }
+    if (p === "/api/synth") {
+      if (device.mode !== "synth") throw new Error("the WVR is not in synth mode");
+      if (method === "GET") return JSON.parse(JSON.stringify(synthPatch));
+      var np = JSON.parse(body), pp = SynthParam.defaults();
+      SYNTH_PARAMS.forEach(function (sp) { if (np.p && typeof np.p[sp.k] === "number") pp[sp.k] = np.p[sp.k]; });
+      synthPatch = { name: np.name || "New patch", p: pp, files: (np.files || ["", ""]).slice(0, 2), map: np.map || synthPatch.map };
+      keepSynth(); DemoSynth.setParams(synthPatch.p); synthSamples();
+      return { ok: true, rev: synthRev };
+    }
+    if (p === "/api/note") { DemoSynth.setParams(synthPatch.p); DemoSynth.noteOn(Number(q.get("n")), Number(q.get("v") || 0)); return { ok: true }; }
+    if (p === "/api/learn") {
+      var lk = q.get("k") || "";
+      if (q.get("forget")) { for (var c in synthPatch.map) if (synthPatch.map[c] === lk) delete synthPatch.map[c]; synthChanged(); }
+      else learning = SynthParam.byKey[lk] ? lk : "";
+      return { ok: true };
+    }
     if (p === "/api/file") {
       if (method === "PUT") { files[name] = new Uint8Array(body); delete buffers[name]; dbPut(name, files[name]); return { ok: true }; }
       if (method === "DELETE") { delete files[name]; delete buffers[name]; dbDelete(name); return { ok: true }; }
@@ -196,9 +261,13 @@ var WVRDemo = (function () {
       return files[name];
     }
     if (p === "/api/play") { play(slot, Number(q.get("vel") || 127)); return { ok: true }; }
-    if (p === "/api/stop") { stop(slot); return { ok: true }; }
+    if (p === "/api/stop") { if (device.mode === "synth") DemoSynth.allOff(); else stop(slot); return { ok: true }; }
     if (p === "/api/live") {
       var key = q.get("k"), val = Number(q.get("v"));
+      if (device.mode === "synth") {
+        if (!SynthParam.byKey[key]) throw new Error("unknown setting");
+        synthPatch.p[key] = val; DemoSynth.setParams(synthPatch.p); return { ok: true };
+      }
       if (key === "master") project.master = val; else if (project.slots[slot - 1]) project.slots[slot - 1][key] = val;
       refresh(); return { ok: true };
     }

@@ -5,7 +5,7 @@
 "use strict";
 
 (function () {
-  // ?host=192.168.4.1 lets a copy of this page on a computer talk to a device.
+  // ?host=192.168.5.18 lets a copy of this page on a computer talk to a device.
   var params = new URLSearchParams(location.search), host = params.get("host");
   var BASE = host ? "http://" + host : "";
   // Without a device (on GitHub Pages, from a file, or with ?demo) a pretend one in the browser answers.
@@ -20,6 +20,7 @@
   // ================================================================ state
 
   var device = null, project = null, rev = -1;
+  var SYNTH = false;                   // the WVR is in synth mode (Device… > Mode)
   var wvrUndo = [], wvrRedo = [];
   var status = { playing: [], errors: {}, peak: [0, 0], voices: 0, under: 0 };
   var busy = {};                       // slot -> upload progress 0..1
@@ -72,10 +73,21 @@
       device = st; rev = st.rev;
       project = WVR.normalise(st.project, st.slots);
       wvrUndo = []; wvrRedo = [];
-      // sounds no slot uses any more (cleared in an earlier session) are removed from the WVR
+      SYNTH = st.mode === "synth";
+      document.body.classList.toggle("synth-mode", SYNTH);
+      $("synthPane").hidden = !SYNTH;
+      $("wvrTitle").textContent = SYNTH ? "Synth" : "WVR";
+      // Sounds nothing uses any more (cleared in an earlier session) are removed from the WVR.
+      // The synth's samples start with "syn-": each mode only tidies its own.
+      var synthFiles = SYNTH ? (st.synth && st.synth.files || []) : null;
       var used = WVR.usedFiles(project);
-      st.files.forEach(function (f) { if (!used[f.name]) api("DELETE", "/api/file?name=" + f.name).catch(function () {}); });
+      st.files.forEach(function (f) {
+        var mine = /^syn-/.test(f.name) === SYNTH;
+        var unused = SYNTH ? synthFiles.indexOf(f.name) < 0 : !used[f.name];
+        if (mine && unused) api("DELETE", "/api/file?name=" + f.name).catch(function () {});
+      });
       $("banner").hidden = true;
+      if (SYNTH) SynthUI.show(st.synth, st.synth ? -1 : 0);
       renderAll();
     });
   }
@@ -124,7 +136,9 @@
     api("GET", "/api/status").then(function (st) {
       status = st;
       $("banner").hidden = true;
-      if (st.rev !== rev && !saving && !savePending) return load();   // changed from another browser
+      if (!SYNTH && st.rev !== rev && !saving && !savePending) return load();   // changed from another browser
+      if (SYNTH !== !!st.synth) return load();                                    // the mode changed
+      if (SYNTH) SynthUI.status(st.synth);
       drawStatus();
     }, function () {
       $("banner").hidden = false;
@@ -561,12 +575,19 @@
       var go = li.querySelector(".go"); if (go) go.textContent = playing[i] ? "■" : "▶";
       if (err && busy[i] === undefined) li.querySelector(".lmeta").innerHTML = '<span class="bad">' + esc(err) + "</span>";
     });
+    var peaks = SYNTH && status.synth ? status.synth.peak : status.peak;
     [["mL", 0], ["mR", 1]].forEach(function (m) {
-      var pk = status.peak[m[1]], db = pk > 0 ? 20 * Math.log10(pk) : -90, e = $(m[0]);
+      var pk = peaks[m[1]], db = pk > 0 ? 20 * Math.log10(pk) : -90, e = $(m[0]);
       e.style.width = Math.max(0, Math.min(100, (db + 60) / 60 * 100)) + "%";
       e.classList.toggle("hot", pk >= 0.999);
     });
     var b = $("wPlay"); if (b) b.textContent = playing[panes.wvr.cursor] ? "■ Stop" : "▶ Play";
+    if (SYNTH) {
+      var ss = status.synth || { voices: 0, load: 0 };
+      $("foot").innerHTML = "Firmware " + esc(device.fw) + " · synth mode · " + ss.voices + " of 6 voices playing · processor " + Math.round(ss.load * 100) + " %" +
+        ' · <a href="https://github.com/Radio32/RadioWVR">Source</a>';
+      return;
+    }
     $("foot").innerHTML = "Firmware " + esc(device.fw) + " · " + status.voices + " of " + device.voices + " voices playing" +
       (status.under ? " · waited for storage " + status.under + "×" : "") + " · " + gb(device.space.free) + " free of " + gb(device.space.total) +
       ' · <a href="https://github.com/Radio32/RadioWVR">Source</a>';
@@ -739,7 +760,9 @@
     ["play", "copy", "cut", "delete", "send"].forEach(function (a) { wb(a).disabled = !W; });
     wb("rename").disabled = !(project && project.slots[panes.wvr.cursor] && project.slots[panes.wvr.cursor].file);
     wb("paste").disabled = !clip;
-    wb("undo").disabled = !wvrUndo.length; wb("redo").disabled = !wvrRedo.length;
+    wb("undo").disabled = SYNTH ? !SynthUI.canUndo() : !wvrUndo.length; wb("redo").disabled = SYNTH ? !SynthUI.canRedo() : !wvrRedo.length;
+    lb("send").disabled = !L || SYNTH;
+    lb("send").title = SYNTH ? "In synth mode, a library sound becomes an oscillator: choose Sample as an oscillator's wave" : "Into the WVR's empty slots";
   }
   function renderAll() { renderLib(); renderWvr(); renderDetail(); renderActive(); }
 
@@ -901,6 +924,10 @@
   }
 
   function wvrAct(a) {
+    if (SYNTH) {
+      if (a === "undo") SynthUI.undo(); else if (a === "redo") SynthUI.redo();
+      return;
+    }
     var p = panes.wvr, sel = p.sel.slice().sort(function (x, y) { return x - y; }), filled = sel.filter(function (i) { return project.slots[i].file; });
     switch (a) {
       case "undo": return restoreWvr(wvrUndo, wvrRedo);
@@ -1122,11 +1149,13 @@
   $("master").addEventListener("change", function () { var v = Number(this.value); changeWvr(function () { project.master = v; }); });
   $("stopAll").addEventListener("click", function () { api("POST", "/api/stop").catch(function () {}); previewStop(); });
 
+  document.addEventListener("keyup", function (e) { if (SYNTH) SynthUI.key(e, false); });
   document.addEventListener("keydown", function (e) {
     if (!$("ask").hidden || $("settings").open || !project) return;
     var t = e.target, typing = /^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName) && t.type !== "range" && t.type !== "checkbox";
-    if (e.key === "Escape") { api("POST", "/api/stop").catch(function () {}); previewStop(); return; }
+    if (e.key === "Escape") { api("POST", "/api/stop").catch(function () {}); previewStop(); if (SYNTH) SynthUI.allOff(); return; }
     if (typing) return;
+    if (SYNTH && SynthUI.key(e, true)) { e.preventDefault(); return; }
     var mod = e.metaKey || e.ctrlKey, k = e.key.toLowerCase(), act = active === "lib" ? libAct : wvrAct;
     if (mod && k === "z") act(e.shiftKey ? "redo" : "undo");
     else if (mod && k === "y") act("redo");
@@ -1161,6 +1190,7 @@
     $("dName").value = d.name; $("dPass").value = d.apPass; $("dSsid").value = d.staSsid; $("dSpass").value = d.staPass; $("dOsc").value = d.oscPort;
     var ch = [[0, "all"]]; for (var i = 1; i <= 16; i++) ch.push([i, String(i)]);
     $("dMidi").innerHTML = options(ch, d.midiChannel);
+    $("dMode").value = d.mode === "synth" ? "synth" : "player";
     $("devInfo").textContent = "Firmware " + device.fw + " · own network at " + device.ip.ap + (device.ip.sta ? " · joined " + device.device.staSsid + " at " + device.ip.sta :
       device.device.staSsid ? " · can't join " + device.device.staSsid + (device.ip.staError ? ": " + device.ip.staError : " yet") : "") +
       (device.storage ? "" : " · THE STORAGE DID NOT START");
@@ -1169,9 +1199,12 @@
   });
   $("dSave").addEventListener("click", function () {
     var body = JSON.stringify({ name: $("dName").value.trim(), apPass: $("dPass").value, staSsid: $("dSsid").value.trim(), staPass: $("dSpass").value,
-                                oscPort: Number($("dOsc").value), midiChannel: Number($("dMidi").value) });
+                                oscPort: Number($("dOsc").value), midiChannel: Number($("dMidi").value), mode: $("dMode").value });
     api("PUT", "/api/device", body).then(function () { return api("POST", "/api/restart"); })
-      .then(function () { $("dMsg").textContent = "Restarting. Join the network “" + $("dName").value.trim() + "” again and reload this page."; },
+      .then(function () {
+        $("dMsg").textContent = "Restarting. Join the network “" + $("dName").value.trim() + "” again and reload this page.";
+        if (DEMO) setTimeout(function () { $("settings").close(); load(); }, 600);
+      },
             function (e) { $("dMsg").textContent = "Not saved: " + e.message; });
   });
   $("fwGo").addEventListener("click", function () {
@@ -1184,6 +1217,15 @@
   // ================================================================ start
 
   $("demoNote").hidden = !DEMO;
+  SynthUI.init({
+    api: api, sendLive: sendLive, upload: function (name, bytes) { return upload(name, bytes, function () {}); }, esc: esc,
+    setSave: setSave, status: wvrStatus, tools: function () { if (project) tools(); },
+    // the library's selected sound, to become an oscillator
+    librarySound: function () {
+      var it = byId(panes.lib.cursor);
+      return it ? { name: it.base, read: function () { return itemFile(it).then(function (f) { return f.arrayBuffer(); }); } } : null;
+    }
+  });
   renderLib(); renderActive();
   load().catch(function (e) {
     $("banner").hidden = false;

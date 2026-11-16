@@ -9,8 +9,9 @@ It does not read the original firmware's storage. The first start formats the eM
 **Try the manager without a WVR:** https://radio32.github.io/RadioWVR/ (a demo: the sounds
 play in the browser and nothing leaves it).
 
-**Status: 0.1.0, the cue player. It compiles and the manager is tested against a pretend
-device, but it has not yet run on a WVR.** See [First run](#first-run-on-hardware) for what to check.
+**Status: 0.2.0.** The cue player runs on a WVR (flashed, updated over WiFi, eMMC working);
+its sound output has not been listened to yet. The synth (below) is new: it runs on a WVR at
+under 60 % of its processor with all six voices, but nobody has heard it on one yet.
 
 ## What it does
 
@@ -19,7 +20,7 @@ device, but it has not yet run on a WVR.** See [First run](#first-run-on-hardwar
 - **No waiting for storage:** the first 93 ms of every sound is kept in RAM, so a trigger starts
   at once and the eMMC catches up behind it. Sounds are ordinary WAV files on a FAT volume.
 - **Triggers:** OSC over WiFi (QLab), MIDI (the DIN input and the USB host backpack), pins to ground.
-- **Manager** at `http://192.168.4.1` (or `http://<name>.local`), in two panes like the
+- **Manager** at `http://192.168.5.18` (or `http://<name>.local`), in two panes like the
   Performer-Library-manager: your sound library on the computer on the left (a folder, its
   folders the categories), the WVR's slots and the selected slot's settings on the right. Drag or
   copy and paste between them; sounds are converted on the way to the WVR. Sliders are heard
@@ -27,13 +28,42 @@ device, but it has not yet run on a WVR.** See [First run](#first-run-on-hardwar
   is written when you press Save.
 - Pitch is real time (4-point interpolation), so it can be changed after upload.
 
-Not yet: filter, delay and reverb; the 2 × 6 voice instrument mode; backup and restore of a
-whole device; loop points inside a sound.
+- **Two modes**, chosen in **Device… → Mode**: the theatre player, or a synth. They never run
+  together: in theatre mode the synth's code isn't started at all, so it can take nothing from
+  a show.
+
+Not yet: effects in the player; backup and restore of a whole device.
+
+## Synth mode
+
+A 6-voice synth with **two oscillators per note**, for a fat sound, played over MIDI (the DIN
+input or the USB backpack), OSC, or the keyboard on the page.
+
+- **Oscillators:** saw and pulse (anti-aliased), triangle, sine, noise, or **a sound from the
+  library** (played at its own pitch on C3). Octave, semitones, fine tune, level, pulse width.
+- **Filter, two characters:** **Fat**, a 4-pole transistor ladder with a tanh in every stage
+  (the one from Radio32 Rings), and **Gritty**, a 2-pole filter whose resonance clips and tears,
+  after a lopsided drive. Cutoff, resonance, drive, envelope amount, key follow, velocity.
+- **Two ADSR envelopes** (filter and amp), an **LFO** (triangle, sine, square, random) to pitch,
+  cutoff and pulse width, **poly, mono or legato** with glide, bend range, stereo spread.
+- **Chorus** after the Juno's (I, II and I+II), **echo** up to 500 ms with ping-pong.
+- **MIDI learn** on every control: press **MIDI learn**, click **learn** on a control, move a
+  knob. Mod wheel (CC 1) adds vibrato; CC 64 is the sustain pedal; pitch bend works.
+- **Presets** to start from, and patches as files (**Download** / **Open…**).
+- The computer's keys play it when the page has focus: **A W S E D F T G Y H U J K…** from the
+  keyboard's lowest C; **Z** and **X** move an octave.
+
+OSC in synth mode: `/wvr/note <note> [velocity]` (velocity 0 lets go), `/wvr/off <note>`,
+`/wvr/stopall`, `/wvr/set <key> <value>` (e.g. `/wvr/set fc 800`; the keys are in
+[synth-params.js](docs/js/synth-params.js)).
+
+Processor load on a WVR, six voices held: 37 % with the Gritty filter, 53 % with Fat, 59 % with
+Fat, chorus and echo. The manager's footer shows it.
 
 ## Using it
 
 1. Power the WVR and join its WiFi network, `RadioWVR-xxxx`, password `12345678`.
-2. Open `http://192.168.4.1`.
+2. Open `http://192.168.5.18`.
 3. **Open folder…** in the Library pane and pick the folder with your sounds (or drop sounds on
    it). Drag sounds onto the WVR's slots. They are converted to 16-bit, 44.1 kHz in the browser.
 4. Select a slot to set it up beside the list. ▶ plays it on the device.
@@ -97,7 +127,7 @@ original firmware can install another one over WiFi:
    ```
 
    The original manager does the same under **WVR → select firmware → force upload**.
-3. The WVR restarts as `RadioWVR-xxxx`. Join that network and open `http://192.168.4.1`.
+3. The WVR restarts as `RadioWVR-xxxx`. Join that network and open `http://192.168.5.18`.
 
 This erases the unit's sounds. The original firmware stays in the other half of the flash: if
 the new one crashes three times in a row while starting, the WVR goes back to it by itself.
@@ -149,17 +179,27 @@ firmware/RadioWVR/
   project.*      the project and device settings (JSON on the eMMC)
   net.*          WiFi and the HTTP API
   control.*      OSC, MIDI, pins
+  synth_dsp.h    the synth's sound (plain C++: also runs on a computer, see test/synth)
+  synth.*        synth mode: MIDI, the patch, MIDI learn, samples as oscillators
+  synth_params.h the synth's parameters, made by tools/embed.py from docs/js/synth-params.js
+  audio_out.*    the I2S output, shared by the player and the synth
   web_bundle.h   the manager, packed by tools/embed.py
 docs/            the manager: plain HTML, CSS and JavaScript, no build step
   js/model.js    the project and the library, as pure functions (tested)
   js/app.js      the page
+  js/synth-params.js  the synth's parameters: the one list for the page and the firmware
+  js/synth-ui.js the synth pane
   js/demo.js     the pretend WVR of the online demo (not in the firmware)
+  js/demo-synth.js  the demo's synth, in Web Audio (close to the WVR, not the same)
 tools/mock.py    a pretend WVR for working on the manager: http://localhost:8032
 test/run.sh      the model's tests (macOS's built-in JavaScript engine)
-test/browser.sh  drives the page in headless Chrome against the pretend WVR
+test/browser.sh  drives the page in headless Chrome against the pretend WVR (player and synth)
+test/synth/run.sh  runs the synth's sound code on a computer: tuning, nothing runs away at full
+                 resonance or feedback, and example patches to listen to in test/synth/out/
 ```
 
-On the eMMC: `project.json`, `device.json` and the sounds in `snd/`.
+On the eMMC: `project.json`, `device.json`, `synth.json` and the sounds in `snd/` (the synth's
+samples start with `syn-`).
 
 The HTTP API is listed at the top of [net.cpp](firmware/RadioWVR/net.cpp). There is no login:
 anyone on the device's network can change it, so give it a WiFi password of its own.

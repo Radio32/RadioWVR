@@ -2,6 +2,7 @@
 #include "config.h"
 #include "engine.h"
 #include "project.h"
+#include "synth.h"
 #include "storage.h"
 #include "web_bundle.h"
 #include <WiFi.h>
@@ -23,6 +24,11 @@
  *  POST   /api/play?slot=N[&vel=V]     POST /api/stop[?slot=N]
  *  POST   /api/live?slot=N&k=gain&v=-6   heard at once, not saved (k=master needs no slot)
  *  POST   /api/update            a firmware .bin; restarts
+ * Synth mode:
+ *  GET|PUT /api/synth            the patch as JSON (PUT: applied and saved)
+ *  POST   /api/note?n=60&v=100   v=0 lets go
+ *  POST   /api/learn?k=fc        the next MIDI controller moved controls fc (k= stops; &forget=1 unmaps)
+ *  POST   /api/live?k=fc&v=800   heard at once
  *  POST   /api/restart
  */
 
@@ -96,7 +102,9 @@ static esp_err_t h_state(httpd_req_t* r) {
   storage_space(&total, &free_);
   String s;
   s.reserve(4096);
-  s += "{\"fw\":\"" FW_VERSION "\",\"slots\":" + String(NUM_SLOTS) + ",\"voices\":" + String(NUM_VOICES);
+  s += "{\"mode\":\"" + String(synth_running() ? "synth" : "player") + "\"";
+  if (synth_running()) { char* sj = synth_json(); s += ",\"synth\":"; s += sj; free(sj); }
+  s += ",\"fw\":\"" FW_VERSION "\",\"slots\":" + String(NUM_SLOTS) + ",\"voices\":" + String(NUM_VOICES);
   s += ",\"storage\":" + String(storage_ok() ? "true" : "false");
   s += ",\"space\":{\"total\":" + String(total) + ",\"free\":" + String(free_) + "}";
   s += ",\"ip\":{\"ap\":\"" + WiFi.softAPIP().toString() + "\",\"sta\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("")) + "\"";
@@ -139,6 +147,11 @@ static esp_err_t h_status(httpd_req_t* r) {
   s += ",\"voices\":" + String(st.voices) + ",\"under\":" + String(st.underruns);
   s += ",\"master\":" + String(engine_master_db(), 1);
   s += ",\"heap\":" + String(heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+  if (synth_running()) {
+    SynthStatus ss; synth_status(&ss);
+    s += ",\"synth\":{\"rev\":" + String(synth_rev()) + ",\"load\":" + String(ss.load, 3) + ",\"voices\":" + String(ss.voices) +
+         ",\"peak\":[" + String(ss.peakL, 4) + "," + String(ss.peakR, 4) + "],\"learn\":\"" + synth_learning() + "\"}";
+  }
   s += ",\"errors\":{";
   first = true;
   for (int i = 0; i < NUM_SLOTS; i++) if (g_slots[i].err[0]) {
@@ -178,6 +191,7 @@ static esp_err_t h_device(httpd_req_t* r) {
 // ------------------------------------------------------------------ files
 
 static bool in_use(const char* name) {
+  if (synth_uses_file(name)) return true;
   for (auto& s : g_slots) if (!strcmp(s.file, name)) return true;
   return false;
 }
@@ -251,14 +265,47 @@ static esp_err_t h_play(httpd_req_t* r) {
   return ok(r);
 }
 static esp_err_t h_stop(httpd_req_t* r) {
+  if (synth_running()) { synth_all_off(); return ok(r); }
   engine_stop(query_int(r, "slot", 0) - 1);
   return ok(r);
 }
 static esp_err_t h_live(httpd_req_t* r) {
   char k[16], v[24];
   if (!query(r, "k", k, sizeof k) || !query(r, "v", v, sizeof v)) return fail(r, "400 Bad Request", "k and v are needed");
+  if (synth_running()) return synth_set(k, atof(v)) ? ok(r) : fail(r, "400 Bad Request", "unknown setting");
   if (!strcmp(k, "master")) { engine_set_master_db(atof(v)); return ok(r); }
   return project_live(query_int(r, "slot", 0) - 1, k, atof(v)) ? ok(r) : fail(r, "400 Bad Request", "unknown slot or setting");
+}
+
+// ------------------------------------------------------------------ synth
+
+static esp_err_t h_synth_get(httpd_req_t* r) {
+  if (!synth_running()) return fail(r, "409 Conflict", "the WVR is not in synth mode");
+  char* s = synth_json();
+  esp_err_t e = reply(r, "200 OK", s);
+  free(s);
+  return e;
+}
+static esp_err_t h_synth_put(httpd_req_t* r) {
+  char* b = body(r, 16 * 1024);
+  if (!b) return fail(r, "400 Bad Request", "no patch, or too large");
+  char err[64] = "";
+  bool good = synth_apply(b, err, sizeof err);
+  free(b);
+  if (!good) return fail(r, "400 Bad Request", err);
+  char out[48];
+  snprintf(out, sizeof out, "{\"ok\":true,\"rev\":%u}", (unsigned)synth_rev());
+  return reply(r, "200 OK", out);
+}
+static esp_err_t h_note(httpd_req_t* r) {
+  synth_note(query_int(r, "n", -1), query_int(r, "v", 100));
+  return ok(r);
+}
+static esp_err_t h_learn(httpd_req_t* r) {
+  char k[16];
+  query(r, "k", k, sizeof k);
+  if (query_int(r, "forget", 0)) synth_forget(k); else synth_learn(k);
+  return ok(r);
 }
 
 // ------------------------------------------------------------------ firmware
@@ -272,6 +319,7 @@ static esp_err_t h_update(httpd_req_t* r) {
   size_t left = r->content_len;
   if (left < 100000) return fail(r, "400 Bad Request", "that is not a firmware file");
   engine_stop(-1);
+  synth_all_off();
   if (!Update.begin(left)) return fail(r, "400 Bad Request", "the firmware doesn't fit");
   bool good = true, first = true;
   while (left && good) {
@@ -361,6 +409,7 @@ void net_begin() {
   // Full power (19.5 dBm) dips the WVR's 3.3 V supply enough to reset it as WiFi starts:
   // lower it before the first transmission.
   WiFi.setTxPower(WIFI_TX_POWER);
+  WiFi.softAPConfig(IPAddress(AP_IP), IPAddress(AP_IP), IPAddress(255, 255, 255, 0));
   WiFi.softAP(g_device.name, g_device.apPass);
   WiFi.setAutoReconnect(false);               // sta_task decides when to try again
   if (sta) xTaskCreatePinnedToCore(sta_task, "sta", 3072, nullptr, 2, nullptr, 0);
@@ -389,6 +438,10 @@ void net_begin() {
   route(srv, "/api/stop", HTTP_POST, h_stop);
   route(srv, "/api/live", HTTP_POST, h_live);
   route(srv, "/api/update", HTTP_POST, h_update);
+  route(srv, "/api/synth", HTTP_GET, h_synth_get);
+  route(srv, "/api/synth", HTTP_PUT, h_synth_put);
+  route(srv, "/api/note", HTTP_POST, h_note);
+  route(srv, "/api/learn", HTTP_POST, h_learn);
   route(srv, "/api/restart", HTTP_POST, h_restart);
   route(srv, "/api/*", HTTP_OPTIONS, h_options);
 }

@@ -1,0 +1,88 @@
+<!doctype html>
+<!-- Drives the manager's synth mode in a browser against the demo device. Run: test/browser.sh -->
+<meta charset="utf-8">
+<body><pre id="result">running</pre>
+<iframe id="f" style="width:1400px;height:1000px"></iframe>
+<script>
+var out = [], errors = [];
+function log(ok, what) { out.push((ok ? "ok   " : "FAIL ") + what); }
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+try { localStorage.removeItem("wvr-demo-device"); localStorage.removeItem("wvr-demo-synth"); } catch (e) {}
+var f = document.getElementById("f");
+f.src = "/index.html?demo";
+f.onload = function () {
+  var w = f.contentWindow, d = f.contentDocument;
+  var $ = function (s) { return d.querySelector(s); }, $$ = function (s) { return d.querySelectorAll(s); };
+  w.addEventListener("error", function (e) { errors.push(e.message); });
+  w.addEventListener("unhandledrejection", function (e) { errors.push("promise: " + (e.reason && e.reason.message || e.reason)); });
+  function click(el) { el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true })); el.click(); }
+  function val(k) { var e = $("#sv_" + k); return e ? e.textContent : null; }
+
+  wait(1200).then(function () {
+    log($("#synthPane").hidden && !d.body.classList.contains("synth-mode"), "starts in theatre mode");
+    click($("#openSettings"));
+    $("#dMode").value = "synth";
+    click($("#dSave"));
+    return wait(1500);
+  }).then(function () {
+    log(d.body.classList.contains("synth-mode") && !$("#synthPane").hidden, "Device… > Mode: Synth shows the synth");
+    log($("#wvrTitle").textContent === "Synth" && $(".wbody").offsetParent === null, "the slots are hidden in synth mode");
+    log($$(".scard").length === 10, "ten groups of controls: " + $$(".scard").length);
+    log($$("#synthKeys .key").length === 25, "a two-octave keyboard");
+    log(val("fc") === "1.80 kHz" && val("vol") === "-6.0 dB", "defaults shown: cutoff " + val("fc") + ", level " + val("vol"));
+    // a slider
+    var r = $('input[data-k="fc"]'); r.value = "500";
+    r.dispatchEvent(new Event("input", { bubbles: true })); r.dispatchEvent(new Event("change", { bubbles: true }));
+    log(/Hz/.test(val("fc")) && val("fc") !== "1.80 kHz", "moving Cutoff shows its value: " + val("fc"));
+    // a switch
+    click($('.seg button[data-k="fm"][data-v="1"]'));
+    log($('.seg button[data-k="fm"][data-v="1"]').classList.contains("on"), "Character switched to Gritty");
+    // the pulse width only shows for a pulse
+    log(!$('[data-row="o1pw"]'), "no pulse width for a saw");
+    click($('.seg button[data-k="o1w"][data-v="1"]'));
+    log(!!$('[data-row="o1pw"]'), "pulse width appears for a pulse");
+    click($('.seg button[data-k="o1w"][data-v="5"]'));
+    log(!!$(".sp-file"), "Sample shows where its sound comes from");
+    // undo
+    var sel = $("#presetSel"); sel.value = "5"; sel.dispatchEvent(new Event("change", { bubbles: true }));
+    log($("#patchName").value === "Gritty bass" && $('.seg button[data-k="vm"][data-v="1"]').classList.contains("on"), "preset Gritty bass loaded (mono)");
+    d.dispatchEvent(new KeyboardEvent("keydown", { key: "z", metaKey: true, bubbles: true }));
+    log($("#patchName").value === "New patch" || $("#patchName").value === "Init", "⌘Z goes back to before the preset: " + $("#patchName").value);
+    // MIDI learn
+    click($("#learnBtn"));
+    log($$(".sp-cc").length === 47 || $$(".sp-cc").length > 30, "MIDI learn shows a learn button on every control: " + $$(".sp-cc").length);
+    click($('[data-learn="fc"]'));
+    return wait(400);
+  }).then(function () {
+    log($('[data-row="fc"]').classList.contains("learning") && /move a knob/.test($('[data-learn="fc"]').textContent), "learn on Cutoff waits for a knob");
+    return w.WVRDemo.request("GET", "/api/status");
+  }).then(function (st) {
+    log(st.synth && st.synth.learn === "fc", "the WVR is waiting for a controller for fc");
+    // the keyboard and the computer's keys
+    var key = $('#synthKeys [data-note="48"]');
+    key.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1 }));
+    return wait(300);
+  }).then(function () {
+    log($('#synthKeys [data-note="48"]').classList.contains("down"), "a key on the screen goes down");
+    $("#synthKeys").dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerId: 1 }));
+    d.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+    log($('#synthKeys [data-note="48"]').classList.contains("down"), "A on the computer plays the lowest C");
+    d.dispatchEvent(new KeyboardEvent("keyup", { key: "a", bubbles: true }));
+    return wait(800);
+  }).then(function () {
+    log(!$('#synthKeys [data-note="48"]').classList.contains("down"), "letting go of A lets go of the note");
+    log(/synth mode/.test($("#foot").textContent), "the footer says synth mode: " + $("#foot").textContent.slice(0, 60));
+    // back to the player
+    click($("#openSettings"));
+    $("#dMode").value = "player";
+    click($("#dSave"));
+    return wait(1500);
+  }).then(function () {
+    log(!d.body.classList.contains("synth-mode") && $("#synthPane").hidden && $$("#wvrList .lrow").length === 16, "back to the theatre player, its slots as they were");
+    log(!errors.length, "no script errors" + (errors.length ? ": " + errors.join(" | ") : ""));
+    document.getElementById("result").textContent = out.join("\n") + "\nDONE";
+  }).catch(function (e) {
+    document.getElementById("result").textContent = out.join("\n") + "\nSTOPPED: " + e.message + "\n" + errors.join("\n");
+  });
+};
+</script>
