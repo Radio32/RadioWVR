@@ -300,6 +300,21 @@ void net_begin() {
   host.toLowerCase();
   bool sta = g_device.staSsid[0] != 0;
   WiFi.persistent(false);
+  // say on the serial port whether the other network was joined, and if not, why
+  WiFi.onEvent([](arduino_event_id_t e, arduino_event_info_t info) {
+    if (e == ARDUINO_EVENT_WIFI_STA_GOT_IP)
+      Serial.printf("Joined \"%s\" as http://%s\n", g_device.staSsid, WiFi.localIP().toString().c_str());
+    else if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+      static uint8_t last = 0;
+      uint8_t why = info.wifi_sta_disconnected.reason;
+      if (why != last)        // it retries every few seconds; say each reason once
+        Serial.printf("Can't join \"%s\": %s (%u)\n", g_device.staSsid,
+          why == WIFI_REASON_NO_AP_FOUND ? "network not found (it must be 2.4 GHz)" :
+          why == WIFI_REASON_AUTH_FAIL || why == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT || why == WIFI_REASON_HANDSHAKE_TIMEOUT ? "wrong password?" :
+          "refused", why);
+      last = why;
+    }
+  });
   WiFi.setHostname(host.c_str());
   WiFi.mode(sta ? WIFI_AP_STA : WIFI_AP);
   WiFi.softAP(g_device.name, g_device.apPass);
