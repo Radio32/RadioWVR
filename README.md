@@ -107,9 +107,22 @@ only a serial adapter helps. Try one unit before doing the rest.
 ### Over serial
 
 Any 3.3 V USB-serial adapter (FTDI): adapter TX to D0, RX to D1, GND to GND (swap D0 and D1 if
-nothing answers). Hold D6 and the small "boot" pad next to the eMMC to ground, press reset, let
-go, then run `./build.sh /dev/cu.usbserial-XXXX`. D0 and D1 are pads on the WVR's edge even
-where no header is fitted.
+nothing answers). Power the WVR from its own USB jack, not from the adapter. D0 and D1 are pads
+on the WVR's edge even where no header is fitted.
+
+To put it in flashing mode, with the WVR powered:
+
+1. Hold **D6** to GND, and press a GND wire firmly onto the round copper dot marked **B**
+   beside the eMMC chip (it is GPIO2, the eMMC's DAT0).
+2. Press and release the reset button while holding both, then let go of them.
+3. Run `./build.sh /dev/cu.usbserial-XXXX`, then press reset again to start the new firmware.
+
+Both are needed. With only D6 grounded the ESP32 still enters a serial mode, but cannot reach
+its flash: `esptool flash-id` reports manufacturer `00` or `ff`. In the right mode it reports
+`c8` (a 16 MB GigaDevice chip) and the boot message says `waiting for download`.
+
+Every power-on starts with `flash read err, 1000`, and a moment later the chip resets itself
+and starts normally. That is the ESP32's built-in loader on this board, not the firmware.
 
 ### Later versions
 
