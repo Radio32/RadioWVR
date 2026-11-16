@@ -223,8 +223,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .sp.learning { outline: 2px solid var(--play); outline-offset: 3px; border-radius: 3px; }
 @keyframes learnpulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .sp-cc.armed { animation: none; } }
-.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
-.seg button { flex: 1 1 auto; border: 0; border-right: 1px solid var(--line); background: var(--surface); color: var(--fg); font: 12px var(--font-body); padding: 5px 6px; cursor: pointer; min-width: 0; }
+.seg { display: flex; flex-wrap: nowrap; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.seg button { flex: 1 1 auto; border: 0; border-right: 1px solid var(--line); background: var(--surface); color: var(--fg); font: 11.5px var(--font-body); padding: 5px 2px; cursor: pointer; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .seg button:last-child { border-right: 0; }
 .seg button.on { background: var(--accent); color: var(--bg); font-weight: 600; }
 .sp-file .btnrow { gap: 6px; }
