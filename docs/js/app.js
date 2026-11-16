@@ -1161,7 +1161,8 @@
     $("dName").value = d.name; $("dPass").value = d.apPass; $("dSsid").value = d.staSsid; $("dSpass").value = d.staPass; $("dOsc").value = d.oscPort;
     var ch = [[0, "all"]]; for (var i = 1; i <= 16; i++) ch.push([i, String(i)]);
     $("dMidi").innerHTML = options(ch, d.midiChannel);
-    $("devInfo").textContent = "Firmware " + device.fw + " · own network at " + device.ip.ap + (device.ip.sta ? " · joined network at " + device.ip.sta : "") +
+    $("devInfo").textContent = "Firmware " + device.fw + " · own network at " + device.ip.ap + (device.ip.sta ? " · joined " + device.device.staSsid + " at " + device.ip.sta :
+      device.device.staSsid ? " · can't join " + device.device.staSsid + (device.ip.staError ? ": " + device.ip.staError : " yet") : "") +
       (device.storage ? "" : " · THE STORAGE DID NOT START");
     $("dMsg").textContent = "";
     $("settings").showModal();

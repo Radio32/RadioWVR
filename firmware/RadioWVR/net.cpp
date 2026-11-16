@@ -88,6 +88,9 @@ static esp_err_t h_options(httpd_req_t* r) {
   return httpd_resp_send(r, nullptr, 0);
 }
 
+static volatile uint8_t staWhy;
+static const char* sta_reason(uint8_t why);
+
 static esp_err_t h_state(httpd_req_t* r) {
   uint64_t total, free_;
   storage_space(&total, &free_);
@@ -96,7 +99,8 @@ static esp_err_t h_state(httpd_req_t* r) {
   s += "{\"fw\":\"" FW_VERSION "\",\"slots\":" + String(NUM_SLOTS) + ",\"voices\":" + String(NUM_VOICES);
   s += ",\"storage\":" + String(storage_ok() ? "true" : "false");
   s += ",\"space\":{\"total\":" + String(total) + ",\"free\":" + String(free_) + "}";
-  s += ",\"ip\":{\"ap\":\"" + WiFi.softAPIP().toString() + "\",\"sta\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("")) + "\"}";
+  s += ",\"ip\":{\"ap\":\"" + WiFi.softAPIP().toString() + "\",\"sta\":\"" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("")) + "\"";
+  s += ",\"staError\":\"" + String(g_device.staSsid[0] && WiFi.status() != WL_CONNECTED && staWhy ? sta_reason(staWhy) : "") + "\"}";
   char* d = device_json();
   s += ",\"device\":"; s += d ? d : "{}"; free(d);
   s += ",\"files\":[";
@@ -293,6 +297,57 @@ static void route(httpd_handle_t srv, const char* uri, httpd_method_t m, esp_err
   httpd_register_uri_handler(srv, &u);
 }
 
+// ------------------------------------------------------------------ the other network
+
+/*
+ * The WVR's own network always comes first. While the ESP32 looks for another network its one
+ * radio leaves its own channel, and whoever is connected to the WVR loses it for a moment. So
+ * it tries for half a minute after starting (or after losing the network), then only every two
+ * minutes, and then only while nobody is connected to its own network.
+ */
+// staWhy: the last reason it could not join; 0: none
+static const char* sta_reason(uint8_t why) {
+  switch (why) {
+    case WIFI_REASON_NO_AP_FOUND: return "network not found (it must be 2.4 GHz)";
+    case WIFI_REASON_AUTH_FAIL: case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT:
+    case WIFI_REASON_HANDSHAKE_TIMEOUT: case WIFI_REASON_AUTH_EXPIRE: return "wrong password?";
+    default: return "refused";
+  }
+}
+
+static void on_wifi(arduino_event_id_t e, arduino_event_info_t info) {
+  static uint32_t said = 0;                  // reasons already printed, so each is said once
+  if (e == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    staWhy = 0; said = 0;
+    Serial.printf("Joined \"%s\" as http://%s\n", g_device.staSsid, WiFi.localIP().toString().c_str());
+  } else if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    uint8_t why = info.wifi_sta_disconnected.reason;
+    staWhy = why;
+    uint32_t bit = 1u << (why % 32);
+    if (!(said & bit)) Serial.printf("Can't join \"%s\": %s (%u)\n", g_device.staSsid, sta_reason(why), why);
+    said |= bit;
+  }
+}
+
+static void sta_task(void*) {
+  const TickType_t s = pdMS_TO_TICKS(1000);
+  for (;;) {
+    for (int attempt = 0; attempt < 3 && !WiFi.isConnected(); attempt++) {   // ~30 s
+      WiFi.begin(g_device.staSsid, g_device.staPass);
+      for (int i = 0; i < 10 && !WiFi.isConnected(); i++) vTaskDelay(s);
+    }
+    if (WiFi.isConnected()) {
+      while (WiFi.isConnected()) vTaskDelay(2 * s);
+      continue;                              // lost it: the same again
+    }
+    WiFi.disconnect(false, false);           // stop looking; the WVR's own network stays
+    Serial.printf("Stopped looking for \"%s\" for now; trying again in 2 minutes when nobody is on %s\n",
+                  g_device.staSsid, g_device.name);
+    vTaskDelay(120 * s);
+    while (WiFi.softAPgetStationNum() > 0) vTaskDelay(10 * s);
+  }
+}
+
 void net_begin() {
   ioBuf = (uint8_t*)heap_caps_malloc(IO_BYTES, MALLOC_CAP_DMA);
 
@@ -300,28 +355,15 @@ void net_begin() {
   host.toLowerCase();
   bool sta = g_device.staSsid[0] != 0;
   WiFi.persistent(false);
-  // say on the serial port whether the other network was joined, and if not, why
-  WiFi.onEvent([](arduino_event_id_t e, arduino_event_info_t info) {
-    if (e == ARDUINO_EVENT_WIFI_STA_GOT_IP)
-      Serial.printf("Joined \"%s\" as http://%s\n", g_device.staSsid, WiFi.localIP().toString().c_str());
-    else if (e == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
-      static uint8_t last = 0;
-      uint8_t why = info.wifi_sta_disconnected.reason;
-      if (why != last)        // it retries every few seconds; say each reason once
-        Serial.printf("Can't join \"%s\": %s (%u)\n", g_device.staSsid,
-          why == WIFI_REASON_NO_AP_FOUND ? "network not found (it must be 2.4 GHz)" :
-          why == WIFI_REASON_AUTH_FAIL || why == WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT || why == WIFI_REASON_HANDSHAKE_TIMEOUT ? "wrong password?" :
-          "refused", why);
-      last = why;
-    }
-  });
+  WiFi.onEvent(on_wifi);
   WiFi.setHostname(host.c_str());
   WiFi.mode(sta ? WIFI_AP_STA : WIFI_AP);
   // Full power (19.5 dBm) dips the WVR's 3.3 V supply enough to reset it as WiFi starts:
   // lower it before the first transmission.
   WiFi.setTxPower(WIFI_TX_POWER);
   WiFi.softAP(g_device.name, g_device.apPass);
-  if (sta) WiFi.begin(g_device.staSsid, g_device.staPass);
+  WiFi.setAutoReconnect(false);               // sta_task decides when to try again
+  if (sta) xTaskCreatePinnedToCore(sta_task, "sta", 3072, nullptr, 2, nullptr, 0);
   WiFi.setSleep(false);                       // no power saving: it delays incoming triggers
   if (MDNS.begin(host.c_str())) MDNS.addService("http", "tcp", 80);
 
